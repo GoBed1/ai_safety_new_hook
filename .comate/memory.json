@@ -1,0 +1,7 @@
+[
+  {
+    "topic": "MODBUS从站初始化",
+    "memory_to_store": "函数init_encoder_forward_slave()初始化双通道MODBUS-RTU从站，在UART7和UART8上分别启动从站服务，支持传感器数据转发。",
+    "memory_id": "c8bf"
+  }
+]
