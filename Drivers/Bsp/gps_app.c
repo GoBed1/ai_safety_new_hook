@@ -2,12 +2,10 @@
 // #include "board_manage.h"
 #include "nmea.h"
 
-// #define LOGD(...) // SYSLOG_DEBUG("GPS",__VA_ARGS__)
-// #define LOGI(...) // SYSLOG_INFO("GPS",__VA_ARGS__)
-// #define LOGE(...) // SYSLOG_ERR("GPS",__VA_ARGS__)
-#define LOGD(...) //printf("[DEBUG]"__VA_ARGS__)
-#define LOGI(...) printf("[INFO ]"__VA_ARGS__)
-#define LOGE(...) printf("[ERROR]"__VA_ARGS__)
+// 包含日志宏修改
+#define LOGD(...) printf("[DEBUG] " __VA_ARGS__)
+#define LOGI(...) printf("[INFO] "  __VA_ARGS__)
+#define LOGE(...) printf("[ERROR] " __VA_ARGS__)
 
 #define TSET_GPS_NMEA_PARSER 0
 
@@ -17,6 +15,19 @@
 #ifndef GPS_TYPE_STD
 #define GPS_TYPE_STD WT_GPS_6N
 #endif
+
+// --- 新增宏定义：消除魔法数字 ---
+#define RTC_BKP_MAGIC_NUMBER    0x5AA5  // RTC备份域校验魔数
+#define TIMEZONE_OFFSET_BEIJING 8       // 北京时间偏移量 (UTC+8)
+
+// 休眠控制强行清零所用的本地 Modbus 寄存器索引
+#define REG_CMD_LED_SWITCH      0
+#define REG_CMD_BUZZER_7M       1
+#define REG_CMD_BUZZER_3M       2
+#define REG_STATUS_LED_SWITCH   100
+#define REG_STATUS_BUZZER       101
+// --------------------------------
+
 // GPS是否已同步（锁星后才允许关机判断）
 uint8_t s_gps_synced = 0;
 extern RTC_HandleTypeDef hrtc;
@@ -179,7 +190,7 @@ void update_gps_time_loop_test(void)
     }
     LOGD("[TEST]  GPS time: %02d:%02d:%02d\r\n", g_nmea_gnss.time_h, g_nmea_gnss.time_m, g_nmea_gnss.time_s);
 }
-//=================================test======================================================
+//=================================test↑======================================================
 
 void update_gps_app(void)
 {
@@ -260,7 +271,7 @@ void rtc_power_init(void)
     {
         LOGI("[PWR] cold start\r\n");
         // 检查备份寄存器 RTC_BKP_DR1 中是否有我们写入的标记 0x5AA5
-        if (HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) == 0x5AA5)
+        if (HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) == RTC_BKP_MAGIC_NUMBER)
         {
             LOGI("[PWR] RTC time is kept alive by VBAT (Coin Cell)!\r\n");
             // 纽扣电池生效，RTC 时间有效，允许直接进行关机计划检测
@@ -317,7 +328,7 @@ void gps_sync_rtc_once(void)
 
     // 解锁备份域，并将 0x5AA5 写入备份寄存器 1
     HAL_PWR_EnableBkUpAccess();
-    HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR1, 0x5AA5);
+    HAL_RTCEx_BKUPWrite(&hrtc, RTC_BKP_DR1, RTC_BKP_MAGIC_NUMBER);
 
     print_internal_rtc_time();
     osDelay(100); // 确保RTC寄存器稳定
@@ -344,8 +355,8 @@ void rtc_power_schedule_check(void)
     uint8_t beijing_m = sTime.Minutes;
     uint16_t now_hhmm = (uint16_t)((beijing_h << 8) | beijing_m);
 
-    uint16_t off_hhmm = modbus_registers[STATUS_POWER_OFF_TIME]; // reg[111]
-    uint16_t on_hhmm = modbus_registers[STATUS_POWER_ON_TIME];   // reg[112]
+    uint16_t off_hhmm = modbus_registers[STATUS_POWER_OFF_TIME];
+    uint16_t on_hhmm = modbus_registers[STATUS_POWER_ON_TIME];
 
     LOGD("[PWR] internal RTC beijing %02d:%02d | off=%02d:%02d on=%02d:%02d\r\n",
            beijing_h, beijing_m,
@@ -357,15 +368,15 @@ void rtc_power_schedule_check(void)
 
     if (now_hhmm == off_hhmm && modbus_registers[STANDBY_ENABLE] == 1) // 精确匹配且待机功能启用
     {
-        // 关闭LED和喇叭
-        modbus_registers[0] = 0;
-        modbus_registers[1] = 0;
-        modbus_registers[2] = 0;
-        modbus_registers[100] = 0;
-        modbus_registers[101] = 0;
-        uint8_t on_h_utc = ((on_hhmm >> 8) + 24 - 8) % 24; // 北京→UTC
-        set_alarm_b(on_h_utc, (uint8_t)(on_hhmm & 0xFF));  // 设RTC闹钟
-        enter_standby();                                   // 进入待机，不返回
+        modbus_registers[REG_CMD_LED_SWITCH] = 0;
+        modbus_registers[REG_CMD_BUZZER_7M] = 0;
+        modbus_registers[REG_CMD_BUZZER_3M] = 0;
+        modbus_registers[REG_STATUS_LED_SWITCH] = 0;
+        modbus_registers[REG_STATUS_BUZZER] = 0;
+
+        uint8_t on_h_utc = ((on_hhmm >> 8) + 24 - TIMEZONE_OFFSET_BEIJING) % 24;
+        set_alarm_b(on_h_utc, (uint8_t)(on_hhmm & 0xFF));
+        enter_standby();
     }
 }
 
@@ -413,27 +424,27 @@ void enter_standby(void)
         return;           // 拒绝休眠，退回去继续等 GPS 信号
     }
 
-    // 2. Check the system's global synchronization flag bit (double insurance)
     if (!s_gps_synced)
     {
         LOGE("[PWR-ERR] System not synced with GPS/VBAT. Abort standby.\r\n");
         return;
     }
+
     LOGI("[PWR] enter standby mode...\r\n");
     osDelay(200);
-    HAL_GPIO_WritePin(GPS_EN_GPIO_Port, GPS_EN_Pin, GPIO_PIN_RESET); // 高电平gps工作
+    HAL_GPIO_WritePin(GPS_EN_GPIO_Port, GPS_EN_Pin, GPIO_PIN_RESET);
     osDelay(100);
-    __HAL_RTC_ALARM_CLEAR_FLAG(&hrtc, RTC_FLAG_ALRBF); // 清闹钟标志
-    __HAL_RTC_ALARM_EXTI_CLEAR_FLAG();                 // ← 新增：清EXTI挂起位
-                                                       // 3. 清H7的唤醒标志（WUF1~WUF6，全部清掉）
+
+    __HAL_RTC_ALARM_CLEAR_FLAG(&hrtc, RTC_FLAG_ALRBF);
+    __HAL_RTC_ALARM_EXTI_CLEAR_FLAG();
+
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WKUP1);
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WKUP2);
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WKUP3);
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WKUP4);
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WKUP5);
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WKUP6);
-    // 4. 清待机/停止标志（H7用CSSF）
-    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB); // 实际写PWR->CPUCR的CSSF位
+
+    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB);
     HAL_PWR_EnterSTANDBYMode();
-    // 不会执行到这里
 }

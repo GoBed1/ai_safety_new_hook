@@ -1,19 +1,18 @@
 #include "read_encoder_task.h"
 // #include "encoder_forward_app.h"
 
-// #define LOGD(...)  printf(__VA_ARGS__)
-#define LOGD(...) //printf("[DEBUG]"__VA_ARGS__)
-#define LOGI(...) printf("[INFO ]"__VA_ARGS__)
-#define LOGE(...) printf("[ERROR]"__VA_ARGS__)
+// 包含日志宏修改
+#define LOGD(...) //printf("[DEBUG] " __VA_ARGS__)
+#define LOGI(...) printf("[INFO] "  __VA_ARGS__)
+#define LOGE(...) printf("[ERROR] " __VA_ARGS__)
 
- volatile uint8_t g_task_alive_flags;
+volatile uint8_t g_task_alive_flags;
 
 #define CMD_LED_SWITCH 0
 #define STATUS_LED_SWITCH 100
 // 喇叭
 #define CMD_BUZZER_7m 1
 #define CMD_BUZZER_3m 2
-// #define CMD_BUZZER_stop 3
 
 #define STATUS_BUZZER 101
 #define STATUS_BMS_BATTERY 102
@@ -24,25 +23,52 @@
 #define STATUS_BMS_REMAIN_CHARGE_TIME 108
 #define STATUS_BMS_TOTAL_VOLTAGE 109
 #define STATUS_BMS_TOTAL_CURRENT 110
-// #define STATUS_POWER_OFF_TIME   111
-// #define STATUS_POWER_ON_TIME    112
-#define REG_ERROR_CODE 113 // 错误码
+#define REG_ERROR_CODE 113
 
 #define SLAVE_LED_ID 1
 #define SLAVE_BMS_ID 4
 
+// --- 新增宏定义：消除魔法数字 ---
+#define CMD_VOLUME                  103     // 音量设置寄存器索引
 
-// ========== 内部函数：大端拼接 ==========
+// BMS/声光控制从机 寄存器地址
+#define BMS_REG_BATTERY_LEVEL       0x0000
+#define BMS_REG_TOTAL_CURRENT       0x0001
+#define BMS_REG_TOTAL_VOLTAGE       0x0002
+#define BMS_REG_SOUND_LIGHT_CTRL    0x0003
+#define BMS_REG_VOLUME_CTRL         0x0006
+#define BMS_REG_REMAIN_DISCHARGE    0x0007
+#define BMS_REG_REMAIN_CHARGE       0x0008
+#define BMS_REG_IS_CHARGING         0x000B
+#define BMS_REG_SOUND_STOP          0x000E
+#define BMS_REG_LED_CTRL            0x00C2
+
+// BMS/声光控制从机 指令值
+#define BMS_CMD_SOUND_7M            0x0008
+#define BMS_CMD_SOUND_3M            0x0009
+#define BMS_CMD_SOUND_STOP          0x0000
+#define BMS_CMD_LED_SLOW_FLASH      0x0051
+#define BMS_CMD_LED_BURST_FLASH     0x0061
+#define BMS_CMD_LED_OFF             0x0060
+
+// 业务阈值与常量
+#define LOW_BATTERY_THRESHOLD       2000    // 低电量警告阈值
+#define DEFAULT_VOLUME              0x001E  // 默认最大音量 (30)
+#define BMS_SAMPLE_BUFFER_SIZE      30      // 采样缓存数组大小
+#define BMS_SAMPLE_VALID_COUNT      20      // 实际计算平均值的采样数
+#define HEARTBEAT_TIMEOUT_MS        60000   // 继电器心跳超时时间(60s)
+#define MODBUS_WAIT_TIMEOUT_MS      1000    // Modbus等待超时时间
+// --------------------------------
 
 // 放电时间全局变量
-uint32_t discharge_samples[30]; // 采样20个
+uint32_t discharge_samples[BMS_SAMPLE_BUFFER_SIZE];
 uint8_t discharge_idx = 0;
 uint8_t discharge_count = 0;
 // 充电时间全局变量
-uint32_t charge_samples[30]; // 采样20个
+uint32_t charge_samples[BMS_SAMPLE_BUFFER_SIZE];
 uint8_t charge_idx = 0;
 uint8_t charge_count = 0;
-// extern nmea_gnss_t g_nmea_gnss;
+
 extern UART_HandleTypeDef huart7;
 extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart3;
@@ -245,7 +271,7 @@ void init_ai_safy_slave(void)
 {
     // 初始化寄存器数组
     memset(modbus_registers, 0, sizeof(modbus_registers));
-
+    
     // HACK 设置系统信息
     modbus_registers[REG_ERROR_CODE] = 0x0000; // 清零错误码/在线状态
     // 配置MODBUS Slave处理器
@@ -260,7 +286,7 @@ void init_ai_safy_slave(void)
     encoder_forward_server.u16timeOut = 1000; // 1秒超时
     encoder_forward_server.xTypeHW = USART_HW;
     LOGI("MODBUS-RTU Slave ID: %d\r\n", FORWARD_SLAVE_ADDR);
-
+    
     // 初始化MODBUS Slave
     ModbusInit(&encoder_forward_server);
     ModbusStart(&encoder_forward_server);
@@ -340,10 +366,10 @@ void buzzer_logic(void)
     if (raw_target_mode == 2) 
     {
         // 触发 3M 报警
-        telegram[1].u16RegAdd = 0x0003;
-        telegram[1].u16reg[0] = 0x0009;
+        telegram[1].u16RegAdd = BMS_REG_SOUND_LIGHT_CTRL;
+        telegram[1].u16reg[0] = BMS_CMD_SOUND_3M;
         ModbusQuery(&bms_sound_light_app, telegram[1]);
-        err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+        err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
         
         if (err != OP_OK_QUERY) {
             LOGE("BUZZER_3M write fail, retrying...\n");
@@ -359,10 +385,10 @@ void buzzer_logic(void)
     else if (raw_target_mode == 1) 
     {
         // 触发 7M 报警
-        telegram[1].u16RegAdd = 0x0003;
-        telegram[1].u16reg[0] = 0x0008;
+        telegram[1].u16RegAdd = BMS_REG_SOUND_LIGHT_CTRL;
+        telegram[1].u16reg[0] = BMS_CMD_SOUND_7M;
         ModbusQuery(&bms_sound_light_app, telegram[1]);
-        err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+        err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
         
         if (err != OP_OK_QUERY) {
             LOGE("BUZZER_7M write fail, retrying...\n");
@@ -378,10 +404,10 @@ void buzzer_logic(void)
     else 
     {
         // 发送关闭命令（或者停止指令）收尾，确保寄存器状态归零
-        telegram[1].u16RegAdd = 0x000E;
-        telegram[1].u16reg[0] = 0x0000;
+        telegram[1].u16RegAdd = BMS_REG_SOUND_STOP;
+        telegram[1].u16reg[0] = BMS_CMD_SOUND_STOP;
         ModbusQuery(&bms_sound_light_app, telegram[1]);
-        err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+        err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
         
         if (err != OP_OK_QUERY) {
             LOGE("BUZZER_SOUND_STOP write fail, retrying...\n");
@@ -400,11 +426,11 @@ void modbus_TxData_logic(void)
     if (cmd_led_switch == 1 && modbus_registers[STATUS_LED_SWITCH] == 0)
     {
         LOGI(" LED on \n");
-        telegram[1].u16RegAdd = 0x00C2;
-        telegram[1].u16reg[0] = 0x0051; // 慢闪，爆闪改为61
+        telegram[1].u16RegAdd = BMS_REG_LED_CTRL;
+        telegram[1].u16reg[0] = BMS_CMD_LED_SLOW_FLASH;// 慢闪，爆闪改为61
         ModbusQuery(&bms_sound_light_app, telegram[1]);
-        uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
-        if (err== OP_OK_QUERY)
+        uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
+        if (err == OP_OK_QUERY)
         {
             LOGI("LED on write success \n");
             // 更新状态寄存器regs[100]且清除命令寄存器regs[0]
@@ -413,34 +439,25 @@ void modbus_TxData_logic(void)
         else
         {
             LOGE("LED on write fail : %d \n", err);
-            
         }
-
-        
     }
 
     if (cmd_led_switch == 0 && modbus_registers[STATUS_LED_SWITCH] == 1)
     {
-
-        // YX95R_LIGHT_OFF;
         LOGI(" LED off \n");
-        telegram[1].u16RegAdd = 0x00C2;
-        telegram[1].u16reg[0] = 0x0060;
+        telegram[1].u16RegAdd = BMS_REG_LED_CTRL;
+        telegram[1].u16reg[0] = BMS_CMD_LED_OFF;
         ModbusQuery(&bms_sound_light_app, telegram[1]);
-        uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
-        if (err== OP_OK_QUERY)
+        uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
+        if (err == OP_OK_QUERY)
         {
             LOGI("LED off write success : %d \n", err);
-            //成功后更新状态寄存器regs[100]且清除命令寄存器regs[0]
             modbus_registers[STATUS_LED_SWITCH] = 0;
         }
         else
         {
             LOGE("LED off write fail : %d \n", err);
-            
         }
-        // 通知RX任务：我发送了命令，你可以等待响应了！
-        // xEventGroupSetBits(eg, EVENT_CMD_SENT);
     }
 
     // 喇叭逻辑处理
@@ -448,13 +465,12 @@ void modbus_TxData_logic(void)
 }
 
 void ai_safy_master_thread(void *argument)
-
 {
     memset(modbus_master_buf, 0, sizeof(modbus_master_buf));
 
     bms_sound_light_app.uModbusType = MB_MASTER;
     bms_sound_light_app.port = &huart8;
-    bms_sound_light_app.u8id = 0; // For master it must be 0
+    bms_sound_light_app.u8id = 0;
     bms_sound_light_app.u16timeOut = 500;
     bms_sound_light_app.EN_Port = NULL;
     bms_sound_light_app.EN_Pin = 0;
@@ -466,52 +482,40 @@ void ai_safy_master_thread(void *argument)
 
     LOGI("bms sound light modbus master start \n");
 
-    // read bms
     telegram[0].u8id = SLAVE_BMS_ID;
     telegram[0].u8fct = MB_FC_READ_REGISTERS;
-    telegram[0].u16RegAdd = 0x0000;
+    telegram[0].u16RegAdd = BMS_REG_BATTERY_LEVEL;
     telegram[0].u16CoilsNo = 1;
     telegram[0].u16reg = bms_results;
 
-    // write light control
     telegram[1].u8id = SLAVE_LED_ID;
     telegram[1].u8fct = MB_FC_WRITE_REGISTER;
     telegram[1].u16CoilsNo = 1;
 
-    // write buzzer control
-    // telegram[2].u8id = 2;
-    // telegram[2].u8fct = MB_FC_WRITE_REGISTER;
-    // telegram[2].u16CoilsNo = 1;
-
-    // read remain discharge time
     telegram[3].u8id = SLAVE_BMS_ID;
     telegram[3].u8fct = MB_FC_READ_REGISTERS;
-    telegram[3].u16RegAdd = 0x0007;
+    telegram[3].u16RegAdd = BMS_REG_REMAIN_DISCHARGE;
     telegram[3].u16CoilsNo = 1;
     telegram[3].u16reg = remainDischargeTime_results;
 
-    // read total voltage
     telegram[4].u8id = SLAVE_BMS_ID;
     telegram[4].u8fct = MB_FC_READ_REGISTERS;
-    telegram[4].u16RegAdd = 0x0002;
+    telegram[4].u16RegAdd = BMS_REG_TOTAL_VOLTAGE;
     telegram[4].u16CoilsNo = 1;
 
-    // is_charging
     telegram[5].u8id = SLAVE_BMS_ID;
     telegram[5].u8fct = MB_FC_READ_REGISTERS;
-    telegram[5].u16RegAdd = 0x000B;
+    telegram[5].u16RegAdd = BMS_REG_IS_CHARGING;
     telegram[5].u16CoilsNo = 1;
 
-    // charge remain time
     telegram[6].u8id = SLAVE_BMS_ID;
     telegram[6].u8fct = MB_FC_READ_REGISTERS;
-    telegram[6].u16RegAdd = 0x0008;
+    telegram[6].u16RegAdd = BMS_REG_REMAIN_CHARGE;
     telegram[6].u16CoilsNo = 1;
 
-    // read total current
     telegram[7].u8id = SLAVE_BMS_ID;
     telegram[7].u8fct = MB_FC_READ_REGISTERS;
-    telegram[7].u16RegAdd = 0x0001;
+    telegram[7].u16RegAdd = BMS_REG_TOTAL_CURRENT;
     telegram[7].u16CoilsNo = 1;
 
     TickType_t last_10s = xTaskGetTickCount();
@@ -524,18 +528,18 @@ void ai_safy_master_thread(void *argument)
     {
         g_task_alive_flags |= TASK_AI_SAFY_ALIVE;
         // 设置音量
-        now_volume = modbus_registers[103];
+        now_volume = modbus_registers[CMD_VOLUME];
 
         // 读取音量寄存器
         if (now_volume != last_volume)
         { // 如果音量有变化
-            telegram[1].u16RegAdd = 0x0006;
+            telegram[1].u16RegAdd = BMS_REG_VOLUME_CTRL;
             telegram[1].u16reg[0] = now_volume;
             ModbusQuery(&bms_sound_light_app, telegram[1]); // 调整喇叭的实际输出音量。
-            uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+            uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
             if (err == OP_OK_QUERY)
             {
-                LOGI("BUZZER_VOLUME write success, lastvolume=%d , nowVolume=%d,modbusReg[103]:%d\n", last_volume, now_volume, modbus_registers[103]);
+                LOGI("BUZZER_VOLUME write success, lastvolume=%d , nowVolume=%d,modbusReg[CMD_VOLUME]:%d\n", last_volume, now_volume, modbus_registers[CMD_VOLUME]);
                 last_volume = now_volume; // 更新上一次的音量记录以供下次比较使用。
             }
             else
@@ -552,7 +556,7 @@ void ai_safy_master_thread(void *argument)
 
             // 每500ms采样一次放电时间
             ModbusQuery(&bms_sound_light_app, telegram[3]);
-            int err1 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+            int err1 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
             if (err1 != OP_OK_QUERY)
             {
                 LOGE("bms dischange time modbus master read fail : %d \n", err1);
@@ -562,28 +566,28 @@ void ai_safy_master_thread(void *argument)
                 uint16_t val = telegram[3].u16reg[0];
                 if (val != 0xFFFF)
                 {
-                    discharge_samples[discharge_idx % 20] = val; // 放入缓冲容器中
+                    discharge_samples[discharge_idx % BMS_SAMPLE_VALID_COUNT] = val; 
                     discharge_idx++;
-                    if (discharge_count < 20)
+                    if (discharge_count < BMS_SAMPLE_VALID_COUNT)
                         discharge_count++;
                 }
             }
 
             // 每500ms采样一次充电时间
             ModbusQuery(&bms_sound_light_app, telegram[6]);
-            int err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+            int err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
             if (err != OP_OK_QUERY)
             {
                 LOGE("bms charge time modbus master read fail : %d \n", err);
             }
             else
             {
-                uint16_t val = telegram[6].u16reg[0]; // 假设充电数据在相同位置，若实际位置不同需调整
+                uint16_t val = telegram[6].u16reg[0]; 
                 if (val != 0xFFFF)
                 {
-                    charge_samples[charge_idx % 20] = val; // 放入充电缓冲容器中
+                    charge_samples[charge_idx % BMS_SAMPLE_VALID_COUNT] = val; 
                     charge_idx++;
-                    if (charge_count < 20)
+                    if (charge_count < BMS_SAMPLE_VALID_COUNT)
                         charge_count++;
                 }
             }
@@ -594,7 +598,7 @@ void ai_safy_master_thread(void *argument)
         {
             last_10s += pdMS_TO_TICKS(10000);
             ModbusQuery(&bms_sound_light_app, telegram[0]);
-            int err1 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+            int err1 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
             if (err1 != OP_OK_QUERY)
             {
                 LOGE("bms led sound modbus master read fail : %d \n", err1);
@@ -603,13 +607,12 @@ void ai_safy_master_thread(void *argument)
             {
                 modbus_registers[STATUS_BMS_BATTERY] = telegram[0].u16reg[0];
                 LOGD("bms led sound modbus master read success,Battery = %d\n", telegram[0].u16reg[0]);
-                // LOGD("work mode = %d\n", modbus_registers[STATUS_WORK_MODE]);
             }
             // 是否在充电状态：0-否，1-是
 
             // 总电压读取
             ModbusQuery(&bms_sound_light_app, telegram[4]);
-            int err2 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+            int err2 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
             if (err2 != OP_OK_QUERY)
             {
                 LOGE("bms total voltage modbus master read fail : %d \n", err2);
@@ -618,12 +621,11 @@ void ai_safy_master_thread(void *argument)
             {
                 modbus_registers[STATUS_BMS_TOTAL_VOLTAGE] = telegram[4].u16reg[0];
                 LOGD("bms total voltage = %d\n", telegram[4].u16reg[0]);
-                // LOGD("work mode = %d\n", modbus_registers[STATUS_BMS_TOTAL_VOLTAGE]);
             }
 
             // //总电流读取 && 判断是否充电状态0-否，1-是
             ModbusQuery(&bms_sound_light_app, telegram[7]);
-            int err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+            int err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
             if (err != OP_OK_QUERY)
             {
                 LOGE("bms total current modbus master read fail : %d \n", err);
@@ -647,7 +649,7 @@ void ai_safy_master_thread(void *argument)
                     modbus_registers[STATUS_BMS_IS_charge] = 2; // 无充电或放电状态
                 }
                 LOGD("bms charge status = %d\n", modbus_registers[STATUS_BMS_IS_charge]);
-                LOGD("bms total current111 = %d===%d\n", modbus_registers[STATUS_BMS_TOTAL_CURRENT], val);
+                LOGD("bms total current = %d===%d\n", modbus_registers[STATUS_BMS_TOTAL_CURRENT], val);
             }
 
             // 每500ms采样一次放电时间，每10s执行一次平均值放入寄存器（剩余放电时间）
@@ -660,7 +662,7 @@ void ai_safy_master_thread(void *argument)
                 }
                 uint16_t avg = (uint16_t)(sum / discharge_count);
                 modbus_registers[STATUS_BMS_REMAIN_DISCHARGE_TIME] = avg;
-                LOGD("remain discharge time avg (5s) = %d min\n", modbus_registers[STATUS_BMS_REMAIN_DISCHARGE_TIME]);
+                LOGD("remain discharge time avg = %d min\n", modbus_registers[STATUS_BMS_REMAIN_DISCHARGE_TIME]);
             }
             else
             {
@@ -683,7 +685,7 @@ void ai_safy_master_thread(void *argument)
                 }
                 uint16_t avg = (uint16_t)(sum / charge_count);
                 modbus_registers[STATUS_BMS_REMAIN_CHARGE_TIME] = avg;
-                LOGD("remain charge time avg (5s) = %d min\n", modbus_registers[STATUS_BMS_REMAIN_CHARGE_TIME]);
+                LOGD("remain charge time avg = %d min\n", modbus_registers[STATUS_BMS_REMAIN_CHARGE_TIME]);
             }
             else
             {
@@ -702,7 +704,7 @@ void ai_safy_master_thread(void *argument)
             (modbus_registers[STATUS_LED_SWITCH] == 1 && modbus_registers[STATUS_BUZZER] == 0) ||
             (modbus_registers[STATUS_LED_SWITCH] == 0 && modbus_registers[STATUS_BUZZER] == 1))
         {
-            if (modbus_registers[STATUS_BMS_BATTERY] <= 2000)
+            if (modbus_registers[STATUS_BMS_BATTERY] <= LOW_BATTERY_THRESHOLD)
             {
                 modbus_registers[STATUS_WORK_MODE] = 2; // 工作状态为2，即低电量警告模式
             }
@@ -713,7 +715,7 @@ void ai_safy_master_thread(void *argument)
         }
         else
         {
-            if (modbus_registers[STATUS_BMS_BATTERY] <= 2000)
+            if (modbus_registers[STATUS_BMS_BATTERY] <= LOW_BATTERY_THRESHOLD)
             {
                 modbus_registers[STATUS_WORK_MODE] = 2; // 工作状态为2，即低电量警告模式
             }
@@ -727,11 +729,10 @@ void ai_safy_master_thread(void *argument)
         osDelay(500);
     }
 }
-// modbus_t telegram;
+
 RFIDClient RFID_client;
 void RFID_master_thread(void *argument)
 {
-
     EventGroupCreate_Init();
     TickType_t last_check = xTaskGetTickCount();
     for (;;)
@@ -748,30 +749,20 @@ void RFID_master_thread(void *argument)
         {
             LOGD("Recevice rfid: ");
             LOGD("modbus_reg[3] = %04X (", modbus_registers[3]);
-            // 打印二进制格式
             for (int i = 15; i >= 0; i--)
             {
                 LOGD("%d", (modbus_registers[3] >> i) & 1);
                 if (i % 4 == 0 && i != 0)
-                    LOGD(" "); // 每4位加空格分隔
+                    LOGD(" ");
             }
-            // LOGD(")\n");
-            // for (int i = 0; i < 12; i++)
-            // {
-            //     LOGD("%04X ", modbus_registers[i + 4]);
-            //     if (i % 3 == 0)
-            //         LOGD("\n");
-            // }
-            // LOGD("\n");
             RFID_OnFrame(&RFID_client,
                          RFID_client.Rx_RFID_buf,
                          RFID_client.Rx_RFID_len);
 
-            // API 3: 立即写入Modbus寄存器
+            // 写入Modbus寄存器
             RFID_WriteToModbusRegs(&RFID_client);
         }
 
-        // 每1秒检查一次离线
         if ((TickType_t)(xTaskGetTickCount() - last_check) >= pdMS_TO_TICKS(5000))
         {
             last_check = xTaskGetTickCount();
@@ -785,27 +776,15 @@ void RFID_master_thread(void *argument)
 // GPS待机线程
 void gps_standby_thread(void *argument)
 {
-
     config_gps_app();
     rtc_power_init();
-    // run_10_oclock_standby_test();
 
     for (;;)
     {
         g_task_alive_flags |= TASK_GPS_ALIVE;
-        // 每1s轮询一次GPS数据
-        // 每1s轮询一次GPS数据
         update_gps_app();
-        // // 检测是否进入待机状态
-        // run_10_oclock_standby_test();
-        // update_gps_time_loop();
-        // print_internal_rtc_time();
-
         rtc_power_schedule_check();
-
         HAL_GPIO_TogglePin(GPIOD, H_B_LED_Pin);
-        // HAL_GPIO_TogglePin(RELAY_1_PIN_GPIO_Port, RELAY_1_PIN_Pin);
-
         osDelay(1000);
     }
 }
@@ -845,47 +824,33 @@ void relay_heartbeat_thread(void *argument)
         }
         else
         {
-            // 2. 如果没有变化，检查是否超时 1 分钟 (60000 毫秒)
-            if ((xTaskGetTickCount() - recv_heartbeat_time) > pdMS_TO_TICKS(60 * 1000) && relay_is_on == 1)
+            // 如果没有变化，检查是否超时 1 分钟 (60000 毫秒)
+            if ((xTaskGetTickCount() - recv_heartbeat_time) > pdMS_TO_TICKS(HEARTBEAT_TIMEOUT_MS) && relay_is_on == 1)
             {
-                // 声光警报关闭
-                //  关闭LED和喇叭
                 modbus_registers[CMD_LED_SWITCH] = 0;
                 modbus_registers[CMD_BUZZER_7m] = 0;
                 modbus_registers[CMD_BUZZER_3m] = 0;
                 modbus_registers[STATUS_LED_SWITCH] = 0;
                 modbus_registers[STATUS_BUZZER] = 0;
 
-                relay_is_on = 0; // 标记为断电状态
+                relay_is_on = 0; 
 
-                // 超时1分钟，继电器引脚置为0 (下电)
                 HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_RESET);
                 LOGE("[Heartbeat] Timeout (>1 min). Relay 2 SET to 0.\r\n");
             }
         }
-
-        // 每秒轮询一次
         osDelay(1000);
     }
 }
 
 void init_read_encoder_task()
 {
-    // HAL_GPIO_TogglePin(GPIOD, GPS_EN_Pin);
     init_ai_safy_slave();
-    // 串口初始化
     init_uart_manage();
 
     HAL_UARTEx_ReceiveToIdle_DMA(&huart2, RFID_client.rx_buf, (uint16_t)sizeof(RFID_client.rx_buf));
-    // modbus_registers[0] = 0;
-    // 初始音量调为最大
-    modbus_registers[103] = 0x001E; // 30的十六进制
-    // now_volume = 0x1E;
-    // 关机&开机时间设置为每天的21:00-次日6:00
-    // modbus_registers[STATUS_POWER_OFF_TIME] = (21 << 8) | 0; // 21:00
-    // modbus_registers[STATUS_POWER_ON_TIME] = (6 << 8) | 0;   // 06:00
+    modbus_registers[CMD_VOLUME] = DEFAULT_VOLUME;
 
-    // HAL_GPIO_TogglePin(GPIOD, GPS_EN_Pin);
     HAL_GPIO_WritePin(RELAY_1_PIN_GPIO_Port, RELAY_1_PIN_Pin, GPIO_PIN_SET);
     HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
 
