@@ -51,7 +51,6 @@ extern "C"
 #elif DEVICE_TYPE == 0x01
 #define HUB_SLAVE_VERSION 502
 #define ENABLE_HUB_SLAVE
-#define FORWARD_SLAVE_ADDR 3
 //    #define USE_FAKE_ENCODER
 #elif DEVICE_TYPE == 0xFF
 #define ENABLE_ERROR_CODE_RATE_TEST

@@ -2,22 +2,15 @@
 #define GPS_APP_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include "uart_manage.h"
-// reg[111]：关机时间，格式高字节=小时/低字节=分钟，例如0x1500=21:00
-// reg[112]：开机时间，例如0x0600=06:00
-#define STATUS_POWER_OFF_TIME   111
-#define STATUS_POWER_ON_TIME    112
-#define POWER_OFF_DEFAULT       ((10 << 8) | 22)
-#define POWER_ON_DEFAULT        ((10  << 8) | 24)
-#define RTC_TIME                114
-#define STANDBY_ENABLE            115
+#include "system_def.h"
 
 
 extern uart_inferface_t gps_app;
-
 void config_gps_app(void);
 void update_gps_app(void);
 void rtc_power_init(void);

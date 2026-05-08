@@ -5,7 +5,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+#include "system_def.h"
 #include "board.h"
 #include "cmsis_os.h"
 #include "task.h"

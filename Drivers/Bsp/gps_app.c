@@ -1,32 +1,6 @@
 #include "gps_app.h"
-// #include "board_manage.h"
 #include "nmea.h"
 
-// 包含日志宏修改
-#define LOGD(...) printf("[DEBUG] " __VA_ARGS__)
-#define LOGI(...) printf("[INFO] "  __VA_ARGS__)
-#define LOGE(...) printf("[ERROR] " __VA_ARGS__)
-
-#define TSET_GPS_NMEA_PARSER 0
-
-#define WT_RTK_UM982 1
-#define WT_GPS_UM626N 2
-#define WT_GPS_6N 3
-#ifndef GPS_TYPE_STD
-#define GPS_TYPE_STD WT_GPS_6N
-#endif
-
-// --- 新增宏定义：消除魔法数字 ---
-#define RTC_BKP_MAGIC_NUMBER    0x5AA5  // RTC备份域校验魔数
-#define TIMEZONE_OFFSET_BEIJING 8       // 北京时间偏移量 (UTC+8)
-
-// 休眠控制强行清零所用的本地 Modbus 寄存器索引
-#define REG_CMD_LED_SWITCH      0
-#define REG_CMD_BUZZER_7M       1
-#define REG_CMD_BUZZER_3M       2
-#define REG_STATUS_LED_SWITCH   100
-#define REG_STATUS_BUZZER       101
-// --------------------------------
 
 // GPS是否已同步（锁星后才允许关机判断）
 uint8_t s_gps_synced = 0;
@@ -36,6 +10,7 @@ static uint8_t s_test_schedule_configured = 0;
 void enter_standby(void);
 void set_alarm_b(uint8_t utc_h, uint8_t utc_m);
 void gps_sync_rtc_once(void);
+
 
 void gps_print_nmea_data(const char *tag)
 {
@@ -300,9 +275,9 @@ void print_internal_rtc_time(void)
     uint8_t beijing_h = (sTime.Hours + 8) % 24;
 
     LOGI("is real write into internal RTC: 20%02u-%02u-%02u %02u:%02u:%02u | Beijing Time: %02u:%02u:%02u\r\n",
-           sDate.Year, sDate.Month, sDate.Date,
-           sTime.Hours, sTime.Minutes, sTime.Seconds,
-           beijing_h, sTime.Minutes, sTime.Seconds);
+         sDate.Year, sDate.Month, sDate.Date,
+         sTime.Hours, sTime.Minutes, sTime.Seconds,
+         beijing_h, sTime.Minutes, sTime.Seconds);
 }
 
 // GPS同步RTC的函数，确保只同步一次
@@ -359,20 +334,20 @@ void rtc_power_schedule_check(void)
     uint16_t on_hhmm = modbus_registers[STATUS_POWER_ON_TIME];
 
     LOGD("[PWR] internal RTC beijing %02d:%02d | off=%02d:%02d on=%02d:%02d\r\n",
-           beijing_h, beijing_m,
-           off_hhmm >> 8, off_hhmm & 0xFF,
-           on_hhmm >> 8, on_hhmm & 0xFF);
+         beijing_h, beijing_m,
+         off_hhmm >> 8, off_hhmm & 0xFF,
+         on_hhmm >> 8, on_hhmm & 0xFF);
 
     // 把当前rtc时间暴露在modbusReg中，方便外部监控
     modbus_registers[RTC_TIME] = now_hhmm;
 
     if (now_hhmm == off_hhmm && modbus_registers[STANDBY_ENABLE] == 1) // 精确匹配且待机功能启用
     {
-        modbus_registers[REG_CMD_LED_SWITCH] = 0;
-        modbus_registers[REG_CMD_BUZZER_7M] = 0;
-        modbus_registers[REG_CMD_BUZZER_3M] = 0;
-        modbus_registers[REG_STATUS_LED_SWITCH] = 0;
-        modbus_registers[REG_STATUS_BUZZER] = 0;
+        modbus_registers[ CMD_LED_SWITCH] = 0;
+        modbus_registers[ CMD_BUZZER_7M] = 0;
+        modbus_registers[ CMD_BUZZER_3M] = 0;
+        modbus_registers[ STATUS_LED_SWITCH] = 0;
+        modbus_registers[ STATUS_BUZZER] = 0;
 
         uint8_t on_h_utc = ((on_hhmm >> 8) + 24 - TIMEZONE_OFFSET_BEIJING) % 24;
         set_alarm_b(on_h_utc, (uint8_t)(on_hhmm & 0xFF));
