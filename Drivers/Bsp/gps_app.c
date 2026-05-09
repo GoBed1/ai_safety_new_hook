@@ -1,11 +1,10 @@
 #include "gps_app.h"
 #include "nmea.h"
-
+#include "modbus_rtu_server_interface.h"
 
 // GPS是否已同步（锁星后才允许关机判断）
 uint8_t s_gps_synced = 0;
 extern RTC_HandleTypeDef hrtc;
-extern uint16_t modbus_registers[];
 static uint8_t s_test_schedule_configured = 0;
 void enter_standby(void);
 void set_alarm_b(uint8_t utc_h, uint8_t utc_m);
@@ -232,10 +231,9 @@ void rtc_power_init(void)
     // 解锁备份域访问权限（必须要有，否则无法读取备份寄存器）
     HAL_PWR_EnableBkUpAccess();
 
-    modbus_registers[STATUS_POWER_OFF_TIME] = POWER_OFF_DEFAULT;
-    modbus_registers[STATUS_POWER_ON_TIME] = POWER_ON_DEFAULT;
-
-    modbus_registers[STANDBY_ENABLE] = 1; // 默认启用定时待机功能
+    MB_Reg_Set(STATUS_POWER_OFF_TIME, POWER_OFF_DEFAULT);
+    MB_Reg_Set(STATUS_POWER_ON_TIME, POWER_ON_DEFAULT);
+    MB_Reg_Set(STANDBY_ENABLE, 1); // 默认启用定时待机功能
 
     if (rtc_is_wakeup_from_standby())
     {
@@ -330,8 +328,8 @@ void rtc_power_schedule_check(void)
     uint8_t beijing_m = sTime.Minutes;
     uint16_t now_hhmm = (uint16_t)((beijing_h << 8) | beijing_m);
 
-    uint16_t off_hhmm = modbus_registers[STATUS_POWER_OFF_TIME];
-    uint16_t on_hhmm = modbus_registers[STATUS_POWER_ON_TIME];
+    uint16_t off_hhmm = MB_Reg_Get(STATUS_POWER_OFF_TIME);
+    uint16_t on_hhmm = MB_Reg_Get(STATUS_POWER_ON_TIME);
 
     LOGD("[PWR] internal RTC beijing %02d:%02d | off=%02d:%02d on=%02d:%02d\r\n",
          beijing_h, beijing_m,
@@ -339,15 +337,15 @@ void rtc_power_schedule_check(void)
          on_hhmm >> 8, on_hhmm & 0xFF);
 
     // 把当前rtc时间暴露在modbusReg中，方便外部监控
-    modbus_registers[RTC_TIME] = now_hhmm;
+    MB_Reg_Set(RTC_TIME, now_hhmm);
 
-    if (now_hhmm == off_hhmm && modbus_registers[STANDBY_ENABLE] == 1) // 精确匹配且待机功能启用
+    if (now_hhmm == off_hhmm && MB_Reg_Get(STANDBY_ENABLE) == 1) // 精确匹配且待机功能启用
     {
-        modbus_registers[ CMD_LED_SWITCH] = 0;
-        modbus_registers[ CMD_BUZZER_7M] = 0;
-        modbus_registers[ CMD_BUZZER_3M] = 0;
-        modbus_registers[ STATUS_LED_SWITCH] = 0;
-        modbus_registers[ STATUS_BUZZER] = 0;
+        MB_Reg_Set(CMD_LED_SWITCH, 0);
+        MB_Reg_Set(CMD_BUZZER_7M, 0);
+        MB_Reg_Set(CMD_BUZZER_3M, 0);
+        MB_Reg_Set(STATUS_LED_SWITCH, 0);
+        MB_Reg_Set(STATUS_BUZZER, 0);
 
         uint8_t on_h_utc = ((on_hhmm >> 8) + 24 - TIMEZONE_OFFSET_BEIJING) % 24;
         set_alarm_b(on_h_utc, (uint8_t)(on_hhmm & 0xFF));

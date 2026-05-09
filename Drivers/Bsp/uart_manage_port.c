@@ -14,6 +14,8 @@
 /* port.c */
 #include "uart_manage.h"
 #include "Modbus.h"
+#include "app_rfid.h"
+
 extern RFIDClient RFID_client;
 extern EventGroupHandle_t eg; // 初始化事件组为NULL
 
@@ -24,9 +26,6 @@ extern EventGroupHandle_t eg; // 初始化事件组为NULL
 #define DMA_BUFFER
 #endif
 
-#define LOGD(...) printf(__VA_ARGS__)
-#define LOGI(...) printf(__VA_ARGS__)
-#define LOGE(...) printf(__VA_ARGS__)
 
 extern UART_HandleTypeDef huart1;
 extern DMA_HandleTypeDef hdma_usart1_rx;

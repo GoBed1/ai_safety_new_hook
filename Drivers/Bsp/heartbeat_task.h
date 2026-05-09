@@ -9,7 +9,7 @@
 #include "cmsis_os.h"
 #include "FreeRTOS.h"
 #include "task.h"
-
+#include "system_def.h"
 #ifndef _HEARTBEAT_TASK_H_
 #define _HEARTBEAT_TASK_H_
 

@@ -6,7 +6,6 @@
 #include <usart.h>
 #include "FreeRTOS.h"
 #include "task.h"
-#include "read_encoder_task.h"
 #include "heartbeat_task.h"
 
 uint32_t get_time_ms(void)
@@ -38,7 +37,7 @@ void init_app(void)
   specify_redirect_uart(&huart1);
   printf("\r\n[INFO] [BOARD] specify redirect printf to huart1\r\n");
 
-  init_read_encoder_task();
+  init_app_hook_task();
   printf("[INFO] [BOARD] ENABLE_ENCODER_TASK\r\n");
 
   HeartbeatTaskHandle = osThreadNew(StartHeartbeatTask, NULL, &HeartbeatTask_attributes);
