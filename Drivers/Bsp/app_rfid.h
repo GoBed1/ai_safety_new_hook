@@ -5,7 +5,6 @@
 #include "system_def.h"
 #include "FreeRTOS.h"
 #include "task.h"
-// #include "portmacro.h"
 //RFID相关参数定义
 #define RFID_MAX_TAGS      8
 #define RFID_OFFLINE_MS    10000U

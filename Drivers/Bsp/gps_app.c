@@ -2,74 +2,22 @@
 #include "nmea.h"
 #include "modbus_rtu_server_interface.h"
 
+extern RTC_HandleTypeDef hrtc;
+
 // GPS是否已同步（锁星后才允许关机判断）
 uint8_t s_gps_synced = 0;
-extern RTC_HandleTypeDef hrtc;
-static uint8_t s_test_schedule_configured = 0;
-void enter_standby(void);
-void set_alarm_b(uint8_t utc_h, uint8_t utc_m);
-void gps_sync_rtc_once(void);
 
+static void enter_standby(void);
+static void set_alarm_b(uint8_t utc_h, uint8_t utc_m);
+static void gps_sync_rtc_once(void);
+static void print_internal_rtc_time(void);
+static uint8_t rtc_is_wakeup_from_standby(void);
 
-void gps_print_nmea_data(const char *tag)
+// 读取PWR标志位，1=来自待机唤醒，0=正常上电
+static uint8_t rtc_is_wakeup_from_standby(void)
 {
-    LOGD("[%s] fix=%u sat=%u view=%u mode=%u time=%02u:%02u:%02u date=%04u-%02u-%02u\r\n",
-         tag,
-         g_nmea_gnss.fix_quality,
-         g_nmea_gnss.satellite,
-         g_nmea_gnss.satellite_in_view,
-         g_nmea_gnss.fix_mode,
-         g_nmea_gnss.time_h,
-         g_nmea_gnss.time_m,
-         g_nmea_gnss.time_s,
-         g_nmea_gnss.date_year,
-         g_nmea_gnss.date_m,
-         g_nmea_gnss.date_d);
-
-    LOGD("[%s] lat=%.6f lon=%.6f alt=%.2f hdop=%.2f pdop=%.2f vdop=%.2f spd=%.2fkn/%.2fkmh cog=%.2f mask=0x%08lX\r\n",
-         tag,
-         g_nmea_gnss.latitude_deg,
-         g_nmea_gnss.longitude_deg,
-         g_nmea_gnss.altitude_m,
-         g_nmea_gnss.precision_m,
-         g_nmea_gnss.pdop_m,
-         g_nmea_gnss.vdop_m,
-         g_nmea_gnss.speed_knots,
-         g_nmea_gnss.speed_kmh,
-         g_nmea_gnss.course_deg,
-         (unsigned long)g_nmea_gnss.sentence_mask);
-}
-
-void gps_test_nmea_parser(void)
-{
-    const char *test_sentences[] = {
-        "$GNGGA,073237.00,2225.61814,N,11412.51906,E,1,08,1.7,75.88,M,-2.36,M,,*57\r\n",
-        "$GNGLL,2225.61814,N,11412.51906,E,073237.00,A,A*74\r\n",
-        "$GNGSA,A,3,08,10,23,16,27,03,14,30,,,,1.8,1.0,1.5*03\r\n",
-        "$GNGSV,2,1,08,03,15,120,35,08,45,067,42,10,32,250,40,14,22,300,37*61\r\n",
-        "$GNRMC,073237.00,A,2225.61814,N,11412.51906,E,0.12,45.6,020326,,,A*42\r\n",
-        "$GNVTG,45.6,T,,M,0.12,N,0.22,K,A*27\r\n",
-        "$GNZDA,073237.00,02,03,2026,00,00*7D\r\n",
-        "$GNTXT,01,01,02,ANTENNA OK*28\r\n",
-    };
-
-    uint32_t ok_count = 0;
-    for (uint32_t i = 0; i < (uint32_t)(sizeof(test_sentences) / sizeof(test_sentences[0])); i++)
-    {
-        const uint8_t *s = (const uint8_t *)test_sentences[i];
-        uint16_t n = (uint16_t)strlen(test_sentences[i]);
-        int ret = nmea_parse(s, n);
-        if (ret == NMEA_OK)
-        {
-            ok_count++;
-            LOGI("NMEA test[%lu] OK\r\n", (unsigned long)(i + 1U));
-        }
-        else
-        {
-            LOGE("NMEA test[%lu] FAIL: %d\r\n", (unsigned long)(i + 1U), ret);
-        }
-    }
-    gps_print_nmea_data("TEST");
+    // 读PWR标志位，1=来自待机唤醒，0=正常上电
+    return (__HAL_PWR_GET_FLAG(PWR_FLAG_SB) != RESET) ? 1 : 0;
 }
 
 void config_gps_app(void)
@@ -125,46 +73,41 @@ void config_gps_app(void)
     HAL_GPIO_WritePin(GPS_EN_GPIO_Port, GPS_EN_Pin, GPIO_PIN_SET); // 高电平gps工作
     osDelay(3000);
 }
-
-//=================================模拟 test gps======================================================
-
-void run_10_oclock_standby_test(void)
+// 初始化RTC电源管理，设置默认的关机和开机时间
+void rtc_power_init(void)
 {
-    LOGD("\r\n========================================\r\n");
-    LOGD("[TEST] 1. INJECTING FAKE GPS TIME (10:00:00 BJ Time)\r\n");
+    // 解锁备份域访问权限（必须要有，否则无法读取备份寄存器）
+    HAL_PWR_EnableBkUpAccess();
 
-    // 1. 强行覆写 GPS 变量 (北京时间 10:00 = UTC 02:00)
-    g_nmea_gnss.fix_quality = 1;
-    g_nmea_gnss.time_h = 2; // UTC 2 点
-    g_nmea_gnss.time_m = 0; // 0 分
-    g_nmea_gnss.time_s = 0; // 0 秒
-    g_nmea_gnss.date_year = 2026;
-    g_nmea_gnss.date_m = 3;
-    g_nmea_gnss.date_d = 12;
+    MB_Reg_Set(STATUS_POWER_OFF_TIME, POWER_OFF_DEFAULT);
+    MB_Reg_Set(STATUS_POWER_ON_TIME, POWER_ON_DEFAULT);
+    MB_Reg_Set(STANDBY_ENABLE, 1); // 默认启用定时待机功能
 
-    // 2. 触发一次 RTC 同步，让底层的硬件 RTC 跑到 10:00
-    gps_sync_rtc_once();
-    s_gps_synced = 1;
-}
-
-// 循环轮询更新gps时间
-void update_gps_time_loop_test(void)
-{
-    // 手动让时间流逝：每秒给假 GPS 时间加 1 秒
-    g_nmea_gnss.time_s++;
-    if (g_nmea_gnss.time_s >= 60)
+    if (rtc_is_wakeup_from_standby())
     {
-        g_nmea_gnss.time_s = 0;
-        g_nmea_gnss.time_m++;
-        if (g_nmea_gnss.time_m >= 60)
+        LOGI("[PWR] from standby\r\n");
+        __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB);
+    }
+    else
+    {
+        LOGI("[PWR] cold start\r\n");
+        // 检查备份寄存器 RTC_BKP_DR1 中是否有我们写入的标记 0x5AA5
+        if (HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) == RTC_BKP_MAGIC_NUMBER)
         {
-            g_nmea_gnss.time_m = 0;
-            g_nmea_gnss.time_h++;
+            LOGI("[PWR] RTC time is kept alive by VBAT (Coin Cell)!\r\n");
+            // 纽扣电池生效，RTC 时间有效，允许直接进行关机计划检测
+            s_gps_synced = 1;
+            print_internal_rtc_time();
+        }
+        else
+        {
+            LOGI("[PWR] RTC time invalid or first boot, waiting for GPS lock...\r\n");
+            // 时间无效，必须等待 GPS 同步
+            s_gps_synced = 0;
         }
     }
-    LOGD("[TEST]  GPS time: %02d:%02d:%02d\r\n", g_nmea_gnss.time_h, g_nmea_gnss.time_m, g_nmea_gnss.time_s);
 }
-//=================================test↑======================================================
+
 
 void update_gps_app(void)
 {
@@ -218,48 +161,7 @@ void update_gps_app(void)
     }
 }
 
-// 读取PWR标志位，1=来自待机唤醒，0=正常上电
-uint8_t rtc_is_wakeup_from_standby(void)
-{
-    // 读PWR标志位，1=来自待机唤醒，0=正常上电
-    return (__HAL_PWR_GET_FLAG(PWR_FLAG_SB) != RESET) ? 1 : 0;
-}
-
-// 初始化RTC电源管理，设置默认的关机和开机时间
-void rtc_power_init(void)
-{
-    // 解锁备份域访问权限（必须要有，否则无法读取备份寄存器）
-    HAL_PWR_EnableBkUpAccess();
-
-    MB_Reg_Set(STATUS_POWER_OFF_TIME, POWER_OFF_DEFAULT);
-    MB_Reg_Set(STATUS_POWER_ON_TIME, POWER_ON_DEFAULT);
-    MB_Reg_Set(STANDBY_ENABLE, 1); // 默认启用定时待机功能
-
-    if (rtc_is_wakeup_from_standby())
-    {
-        LOGI("[PWR] from standby\r\n");
-        __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB);
-    }
-    else
-    {
-        LOGI("[PWR] cold start\r\n");
-        // 检查备份寄存器 RTC_BKP_DR1 中是否有我们写入的标记 0x5AA5
-        if (HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR1) == RTC_BKP_MAGIC_NUMBER)
-        {
-            LOGI("[PWR] RTC time is kept alive by VBAT (Coin Cell)!\r\n");
-            // 纽扣电池生效，RTC 时间有效，允许直接进行关机计划检测
-            s_gps_synced = 1;
-            print_internal_rtc_time();
-        }
-        else
-        {
-            LOGI("[PWR] RTC time invalid or first boot, waiting for GPS lock...\r\n");
-            // 时间无效，必须等待 GPS 同步
-            s_gps_synced = 0;
-        }
-    }
-}
-
+//打印内部RTC时间
 void print_internal_rtc_time(void)
 {
     RTC_TimeTypeDef sTime = {0};
@@ -420,4 +322,29 @@ void enter_standby(void)
 
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB);
     HAL_PWR_EnterSTANDBYMode();
+}
+
+void gps_rtc_app_init(void){
+    config_gps_app();
+    rtc_power_init();
+}
+
+// ========== 2. 核心业务总线 (自带时序) ==========
+void process_gps_logic(void)
+{
+    static TickType_t last_1000ms = 0;
+
+    // 1. 串口缓冲区解析 (每次循环都执行，防止缓冲区溢出)
+    update_gps_app();
+
+    // 2. 休眠日程检测与心跳灯 (每 1000ms 执行一次)
+    if (xTaskGetTickCount() - last_1000ms >= pdMS_TO_TICKS(1000))
+    {
+        last_1000ms = xTaskGetTickCount();
+        
+        rtc_power_schedule_check();
+        
+        HAL_GPIO_TogglePin(GPIOD, H_B_LED_Pin); // 心跳灯闪烁
+
+    }
 }

@@ -3,7 +3,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "event_groups.h"
-#include "usart.h" // 包含 huart2 的声明
+#include "usart.h" 
 
 extern volatile uint8_t g_task_alive_flags;
 extern EventGroupHandle_t eg;

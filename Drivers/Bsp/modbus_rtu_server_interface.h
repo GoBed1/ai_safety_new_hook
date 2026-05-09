@@ -13,5 +13,5 @@ void MB_Reg_SetBits(uint16_t index, uint16_t mask, uint16_t value);
 uint16_t* MB_Reg_GetPointer(void);
 uint16_t* MB_InputReg_GetPointer(void);
 void init_modbus_master(modbusHandler_t *handler, UART_HandleTypeDef *huart, uint16_t *buf, uint16_t buf_len);
-
+void init_modbus_slave(modbusHandler_t *handler, UART_HandleTypeDef *huart, uint8_t slave_id);
 #endif

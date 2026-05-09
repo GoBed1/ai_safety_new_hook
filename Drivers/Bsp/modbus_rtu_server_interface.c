@@ -53,3 +53,27 @@ uint16_t* MB_InputReg_GetPointer(void) { return modbus_input_registers; }
     ModbusStart(handler);
 
 }
+
+void init_modbus_slave(modbusHandler_t *handler, UART_HandleTypeDef *huart, uint8_t slave_id) 
+{
+
+    handler->uModbusType = MB_SLAVE;
+    handler->u8id = slave_id; 
+    handler->port = huart;
+    handler->EN_Port = NULL; 
+    handler->EN_Pin = 0;
+    
+    // 绑定受保护的寄存器内存
+    handler->u16regs = MB_Reg_GetPointer();            
+    handler->u16inputregs = MB_InputReg_GetPointer(); 
+    
+    handler->u16regsize = REGS_TOTAL_NUM;
+    handler->u16timeOut = 1000; 
+    handler->xTypeHW = USART_HW;
+    
+    // 初始化并启动
+    ModbusInit(handler);
+    ModbusStart(handler);
+    
+    LOGI("modbus slave (ID:%d) initialized on %p\n", slave_id, huart);
+}

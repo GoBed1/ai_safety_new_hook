@@ -2,7 +2,7 @@
 #include "modbus_rtu_server_interface.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "board.h" // 获取引脚定义
+#include "board.h" 
 
 extern volatile uint8_t g_task_alive_flags;
 extern uint16_t last_volume; 

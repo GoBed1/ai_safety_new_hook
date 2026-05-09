@@ -85,7 +85,7 @@ extern "C"
 #define LOGE(...)                                      printf("[ERROR] " __VA_ARGS__)
 
 /* ========================================================================= */
-/* 2. 系统调度与阈值配置 (System & Thresholds)                               */
+/* 2. 系统调度、看门狗与阈值配置 (System & Thresholds)                               */
 /* ========================================================================= */
 #define TIMEZONE_OFFSET_BEIJING                        8       // 北京时间偏移量 (UTC+8)
 #define HEARTBEAT_TIMEOUT_MS                           60000   // 继电器心跳超时时间(60s)
@@ -97,7 +97,7 @@ extern "C"
 #define BMS_SAMPLE_VALID_COUNT                         20      // 实际计算平均值的采样数
 
 #define REGS_TOTAL_NUM                                 256     // 内部Modbus寄存器总数
-#define FORWARD_SLAVE_ADDR                             3       // 本机作为 Slave 的地址 
+#define FORWARD_SLAVE_ADDR                             1       // stm32本机作为 Slave 的地址 
 #define REG_ERROR_CODE                                 113     // 系统错误码
  // -看门狗打卡标志位======
 #define TASK_AI_SAFY_ALIVE    (1 << 0)

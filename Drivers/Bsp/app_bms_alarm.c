@@ -29,12 +29,13 @@ uint16_t modbus_master_buf[128] = {0};
 // =========================================================
 // 1. 发送/控制 专用指令配置
 // =========================================================
-uint16_t cmd_payload = 0; // 专门用来存放要发送的数据，防止野指针
+uint16_t cmd_payload = 0; 
 modbus_t cmd_telegram = {
-    .u8id = SLAVE_LED_ID,          // 默认发送目标
-    .u8fct = MB_FC_WRITE_REGISTER, // 默认写单个寄存器
+    .u8id = SLAVE_LED_ID,          
+    .u8fct = MB_FC_WRITE_REGISTER, 
     .u16CoilsNo = 1,
-    .u16reg = &cmd_payload // 绑定有效内存地址
+    .u16reg = &cmd_payload // 绑定数据缓存
+
 };
 
 // =========================================================
@@ -54,7 +55,7 @@ typedef enum
 // 为每个读取项分配独立的数据接收缓存
 uint16_t bms_read_results[READ_MSG_COUNT] = {0};
 
-// BMS 数据读取配置表 (静态初始化，一次写好，告别主循环里的臃肿代码)
+// BMS 数据读取配置表 
 static modbus_t bms_read_telegrams[READ_MSG_COUNT] = {
     [READ_BATT_LEVEL] = {.u8id = SLAVE_BMS_ID, .u8fct = MB_FC_READ_REGISTERS, .u16RegAdd = REG_BATTERY_LEVEL, .u16CoilsNo = 1, .u16reg = &bms_read_results[READ_BATT_LEVEL]},
     [READ_REMAIN_DISCHARGE] = {.u8id = SLAVE_BMS_ID, .u8fct = MB_FC_READ_REGISTERS, .u16RegAdd = REG_REMAIN_DISCHARGE, .u16CoilsNo = 1, .u16reg = &bms_read_results[READ_REMAIN_DISCHARGE]},

@@ -5,8 +5,8 @@
 #include "app_bms_alarm.h"
 // ====== 看门狗标志位======
 volatile uint8_t g_task_alive_flags = 0;
-
-
+extern UART_HandleTypeDef huart7;
+static modbusHandler_t modbus_rtu_server;
 
 osThreadId_t ai_safy_slave_handle;
 const osThreadAttr_t ai_safy_slave_attributes = {
@@ -56,7 +56,6 @@ void init_ai_safy_slave(void) {
     static modbusHandler_t modbus_rtu_server;
     extern UART_HandleTypeDef huart7;
     
-    MB_Reg_Set(REG_ERROR_CODE, 0x0000); 
 
     modbus_rtu_server.uModbusType = MB_SLAVE;
     modbus_rtu_server.u8id = FORWARD_SLAVE_ADDR; 
@@ -142,52 +141,39 @@ void relay_heartbeat_thread(void *argument)
         osDelay(100);                           
     }
 }
-// GPS待机线程
+// GPS/待机线程
 void gps_standby_thread(void *argument)
 {
-
-    config_gps_app();
-    rtc_power_init();
-    // run_10_oclock_standby_test();
-
+    //gps / 待机初始化
+    gps_rtc_app_init(); 
     for (;;)
     {
         g_task_alive_flags |= TASK_GPS_ALIVE;
-        // 每1s轮询一次GPS数据
-        // 每1s轮询一次GPS数据
-        update_gps_app();
-        // // 检测是否进入待机状态
-        // run_10_oclock_standby_test();
-        // update_gps_time_loop();
-        // print_internal_rtc_time();
+        
+        process_gps_logic();  
 
-        rtc_power_schedule_check();
-
-        HAL_GPIO_TogglePin(GPIOD, H_B_LED_Pin);
-        // HAL_GPIO_TogglePin(RELAY_1_PIN_GPIO_Port, RELAY_1_PIN_Pin);
-
-        osDelay(1000);
+        osDelay(1000); 
     }
 }
 // 吊钩系统总初始化入口
 void init_app_hook_task() {
     EventGroupCreate_Init();
-    init_ai_safy_slave();    // 1. 启动本机的 Modbus 通信服务
+    //启动本机的 Modbus 通信服务
+    init_modbus_slave(&modbus_rtu_server, &huart7, FORWARD_SLAVE_ADDR);  
     init_uart_manage();
     HAL_UARTEx_ReceiveToIdle_DMA(&huart2, RFID_client.rx_buf, (uint16_t)sizeof(RFID_client.rx_buf));
     
     // 初始化默认音量
     MB_Reg_Set(CMD_VOLUME, DEFAULT_VOLUME); 
+    //初始化错误码寄存器为0x0000
+    MB_Reg_Set(REG_ERROR_CODE, 0x0000); 
+
     //声光警报和bms初始化
     init_bms_alarm_module();
     //继电器初始化
     relay_app_init(); 
-
     
-    // 5. 启动 GPS 待机线程 (维持原样，后续再重构)
-    // extern osThreadAttr_t gps_standby_attributes;
-    // extern void gps_standby_thread(void *argument);
-    // osThreadNew(gps_standby_thread, NULL, &gps_standby_attributes);
+
     RFID_master_handle = osThreadNew(RFID_master_thread, NULL, &RFID_master_attributes);
     ai_safy_master_handle = osThreadNew(ai_safy_master_thread, NULL, &ai_safy_master_attributes);
     relay_heartbeat_handle = osThreadNew(relay_heartbeat_thread, NULL, &relay_heartbeat_attributes);
