@@ -3,6 +3,8 @@
 #include "app_rfid.h"
 #include "app_relay.h"
 #include "app_bms_alarm.h"
+#include "app_heart_led_status.h"
+
 // ====== 看门狗标志位======
 volatile uint8_t g_task_alive_flags = 0;
 extern UART_HandleTypeDef huart7;
@@ -41,6 +43,13 @@ const osThreadAttr_t relay_heartbeat_attributes = {
     .name = "RelayHeartbeat",
     .stack_size = 1024 * 4,
     .priority = (osPriority_t)osPriorityNormal,
+};
+// 系统监控线程
+osThreadId_t sys_supervisor_handle;
+const osThreadAttr_t sys_supervisor_attributes = {
+    .name = "SysSupervisor",
+    .stack_size = 1024 * 2,
+    .priority = (osPriority_t)osPriorityBelowNormal, 
 };
 
 EventGroupHandle_t eg = NULL; 
@@ -155,28 +164,38 @@ void gps_standby_thread(void *argument)
         osDelay(1000); 
     }
 }
+
+void sys_supervisor_thread(void *argument)
+{
+   for (;;)
+    {
+        sys_supervisor_process();
+        osDelay(100); 
+    }
+}
+
 // 吊钩系统总初始化入口
 void init_app_hook_task() {
+    
     EventGroupCreate_Init();
     //启动本机的 Modbus 通信服务
     init_modbus_slave(&modbus_rtu_server, &huart7, FORWARD_SLAVE_ADDR);  
+    //初始化串口管理模块
     init_uart_manage();
-    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, RFID_client.rx_buf, (uint16_t)sizeof(RFID_client.rx_buf));
+    //声光警报和bms,主机初始化
+    init_bms_alarm_module();
+    //继电器初始化
+    relay_app_init(); 
     
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, RFID_client.rx_buf, (uint16_t)sizeof(RFID_client.rx_buf));
     // 初始化默认音量
     MB_Reg_Set(CMD_VOLUME, DEFAULT_VOLUME); 
     //初始化错误码寄存器为0x0000
     MB_Reg_Set(REG_ERROR_CODE, 0x0000); 
 
-    //声光警报和bms初始化
-    init_bms_alarm_module();
-    //继电器初始化
-    relay_app_init(); 
-    
-
     RFID_master_handle = osThreadNew(RFID_master_thread, NULL, &RFID_master_attributes);
     ai_safy_master_handle = osThreadNew(ai_safy_master_thread, NULL, &ai_safy_master_attributes);
     relay_heartbeat_handle = osThreadNew(relay_heartbeat_thread, NULL, &relay_heartbeat_attributes);
     gps_standby_handle = osThreadNew(gps_standby_thread, NULL, &gps_standby_attributes);
-
+    sys_supervisor_handle = osThreadNew(sys_supervisor_thread, NULL, &sys_supervisor_attributes);
 }

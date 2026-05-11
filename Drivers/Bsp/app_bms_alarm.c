@@ -325,10 +325,14 @@ void modbus_bms_handle(void)
             {
                 MB_Reg_Set(STATUS_BMS_BATTERY, bms_read_results[READ_BATT_LEVEL]);
                 LOGD("bms led sound modbus master read success,Battery = %d\n", bms_read_results[READ_BATT_LEVEL]);
+                //读取成功，清除系统错误码
+                MB_Reg_Set(REG_ERROR_CODE, ERR_NONE);
             }
             else
             {
                 LOGE("bms led sound modbus master read fail  \n");
+                // 这里的数字即代表错误时闪烁的次数（例如填3就闪3下，最多支持5）
+                MB_Reg_Set(REG_ERROR_CODE, ERR_BMS_READ_FAIL);
             }
 
             // 读取总电压

@@ -344,7 +344,5 @@ void process_gps_logic(void)
         
         rtc_power_schedule_check();
         
-        HAL_GPIO_TogglePin(GPIOD, H_B_LED_Pin); // 心跳灯闪烁
-
     }
 }

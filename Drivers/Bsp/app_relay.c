@@ -10,7 +10,6 @@ extern uint16_t last_volume;
 static uint16_t last_heartbeat_val = 0;
 static TickType_t recv_heartbeat_time = 0;
 static uint8_t relay_is_on = 1;
-
 void relay_app_init(void)
 {
     // 初始化引脚状态
