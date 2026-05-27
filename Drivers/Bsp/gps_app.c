@@ -12,7 +12,7 @@ static void set_alarm_b(uint8_t utc_h, uint8_t utc_m);
 static void gps_sync_rtc_once(void);
 static void print_internal_rtc_time(void);
 static uint8_t rtc_is_wakeup_from_standby(void);
-uint16_t is_soft_standby = 0; // 软休眠状态标志（爆闪灯断电）
+volatile uint16_t is_soft_standby = 0; // 软休眠状态标志（爆闪灯断电）
 // 读取PWR标志位，1=来自待机唤醒，0=正常上电
 static uint8_t rtc_is_wakeup_from_standby(void)
 {
@@ -82,7 +82,6 @@ void rtc_power_init(void)
     MB_Reg_Set(STATUS_POWER_OFF_TIME, POWER_OFF_DEFAULT);
     MB_Reg_Set(STATUS_POWER_ON_TIME, POWER_ON_DEFAULT);
     MB_Reg_Set(SOFT_STANDBY_ENABLE, 1); // 软待机默认开启
-
 
     if (rtc_is_wakeup_from_standby())
     {
@@ -233,8 +232,8 @@ void rtc_power_schedule_check(void)
     uint16_t off_hhmm = MB_Reg_Get(STATUS_POWER_OFF_TIME);
     uint16_t on_hhmm = MB_Reg_Get(STATUS_POWER_ON_TIME);
 
-    uint16_t soft_enable  = MB_Reg_Get(SOFT_STANDBY_ENABLE);  // 软休眠开关
-    uint16_t hard_enable  = MB_Reg_Get(STM32_STANDBY_ENABLE); // 硬休眠开关
+    uint16_t soft_enable = MB_Reg_Get(SOFT_STANDBY_ENABLE);  // 软休眠开关
+    uint16_t hard_enable = MB_Reg_Get(STM32_STANDBY_ENABLE); // 硬休眠开关
 
     LOGD("[PWR] internal RTC beijing %02d:%02d | off=%02d:%02d on=%02d:%02d\r\n",
          beijing_h, beijing_m,
@@ -259,8 +258,25 @@ void rtc_power_schedule_check(void)
     // 启用软休眠功能（爆闪灯断电）
     if (soft_enable == 1)
     {
+        uint8_t should_sleep = 0; // 当前时间是否休眠
+
+        // 判断当前时间是否落在 [关机时间, 开机时间)
+        if (off_hhmm < on_hhmm)
+        {
+            if (now_hhmm >= off_hhmm && now_hhmm < on_hhmm)
+            {
+                should_sleep = 1;
+            }
+        }
+        else if (off_hhmm > on_hhmm)
+        {
+            if (now_hhmm >= off_hhmm || now_hhmm < on_hhmm)
+            {
+                should_sleep = 1;
+            }
+        }
         // 触发条件：到达关机时间，且当前不在待机状态
-        if (now_hhmm == off_hhmm && is_soft_standby == 0) 
+        if (should_sleep == 1 && is_soft_standby == 0)
         {
             is_soft_standby = 1;
             MB_Reg_Set(CMD_LED_SWITCH, 0);
@@ -277,10 +293,11 @@ void rtc_power_schedule_check(void)
             uint16_t err = MB_Reg_Get(REG_ERROR_CODE);
             MB_Reg_Set(REG_ERROR_CODE, err & ~(ERR_HEARTBEAT_TIMEOUT | ERR_LED_OFFLINE));
             taskEXIT_CRITICAL();
-        }else if (now_hhmm == on_hhmm && is_soft_standby == 1)
+        }
+        else if (should_sleep == 0 && is_soft_standby == 1)
         {
             is_soft_standby = 0; // 标记系统退出软休眠状态
-            
+
             HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
             LOGI("[PWR] Exit SOFT standby. Relay 2 ON.\r\n");
         }

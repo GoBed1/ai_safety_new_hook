@@ -6,7 +6,7 @@
 
 extern volatile uint8_t g_task_alive_flags;
 extern uint16_t last_volume;
-extern uint16_t is_soft_standby; // 软休眠状态标志（爆闪灯断电）
+extern volatile uint16_t is_soft_standby; // 软休眠状态标志（爆闪灯断电）
 static uint16_t last_heartbeat_val = 0;
 static TickType_t recv_heartbeat_time = 0;
 static uint8_t relay_is_on = 1;
@@ -32,10 +32,10 @@ void process_relay_logic(void)
 
         if (is_soft_standby == 1)
         {
-            recv_heartbeat_time = xTaskGetTickCount(); // 不断“喂狗”，更新接收时间
+            recv_heartbeat_time = xTaskGetTickCount();          // 不断“喂狗”，更新接收时间
             last_heartbeat_val = MB_Reg_Get(STATUS_HEART_BEAT); // 同步最新值
-            relay_is_on = 0; // 同步当前继电器真实状态
-            return; // 提前退出，不执行后续的心跳判断
+            relay_is_on = 0;                                    // 同步当前继电器真实状态
+            return;                                             // 提前退出，不执行后续的心跳判断
         }
 
         uint16_t current_heartbeat = MB_Reg_Get(STATUS_HEART_BEAT);
@@ -62,7 +62,10 @@ void process_relay_logic(void)
             }
             taskENTER_CRITICAL();
             uint16_t err_heart = MB_Reg_Get(REG_ERROR_CODE);
-            MB_Reg_Set(REG_ERROR_CODE, err_heart & ~ERR_HEARTBEAT_TIMEOUT); // 仅清除心跳超时错误
+            if (err_heart & ERR_HEARTBEAT_TIMEOUT) // 如果之前存在心跳超时错误，收到心跳后清除该错误
+            {
+                MB_Reg_Set(REG_ERROR_CODE, err_heart & ~ERR_HEARTBEAT_TIMEOUT); 
+            }
             taskEXIT_CRITICAL();
         }
         else

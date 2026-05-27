@@ -6,7 +6,7 @@
 #include "usart.h" // 包含 huart8 等串口
 
 extern volatile uint8_t g_task_alive_flags;
-extern uint16_t is_soft_standby;
+extern volatile uint16_t is_soft_standby;
 // 放电时间全局变量
 uint32_t discharge_samples[BMS_SAMPLE_BUFFER_SIZE];
 uint8_t discharge_idx = 0;
