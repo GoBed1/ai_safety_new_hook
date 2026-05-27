@@ -232,7 +232,7 @@ void led_logic(void)
             if (led_timeout_count < 3) 
             {
                 led_timeout_count++;
-                logE("LED write fail, timeout count = %d\n", led_timeout_count);
+                LOGE("LED write fail, timeout count = %d\n", led_timeout_count);
             }
         }
     }
