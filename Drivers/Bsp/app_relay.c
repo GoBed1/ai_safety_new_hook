@@ -2,10 +2,10 @@
 #include "modbus_rtu_server_interface.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "board.h" 
+#include "board.h"
 
 extern volatile uint8_t g_task_alive_flags;
-extern uint16_t last_volume; 
+extern uint16_t last_volume;
 
 static uint16_t last_heartbeat_val = 0;
 static TickType_t recv_heartbeat_time = 0;
@@ -37,13 +37,13 @@ void process_relay_logic(void)
         {
             last_heartbeat_val = current_heartbeat;
             recv_heartbeat_time = xTaskGetTickCount(); // 更新最后一次收到心跳的时间
-            
+
             if (relay_is_on == 0)
             {
                 // 收到心跳，继电器引脚置为1 (上电)
                 HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
-                last_volume = 0xFFFF; // 音量更新,主循环会更新
-                relay_is_on = 1;      // 标记为有电状态
+                last_volume = 0xFFFF;             // 音量更新,主循环会更新
+                relay_is_on = 1;                  // 标记为有电状态
                 MB_Reg_Set(STATUS_LED_SWITCH, 0); // 灯关闭
             }
             else
@@ -52,6 +52,10 @@ void process_relay_logic(void)
                 HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
                 LOGI("[Heartbeat] Host active. Relay 2 SET to 1. Reg[104]=%d\r\n", current_heartbeat);
             }
+            taskENTER_CRITICAL();
+            uint16_t err_heart = MB_Reg_Get(REG_ERROR_CODE);
+            MB_Reg_Set(REG_ERROR_CODE, err_heart & ~ERR_HEARTBEAT_TIMEOUT); // 仅清除心跳超时错误
+            taskEXIT_CRITICAL();
         }
         else
         {
@@ -64,13 +68,15 @@ void process_relay_logic(void)
                 MB_Reg_Set(STATUS_LED_SWITCH, 0);
                 MB_Reg_Set(STATUS_BUZZER, 0);
 
-                relay_is_on = 0; 
+                relay_is_on = 0;
 
                 HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_RESET);
+                taskENTER_CRITICAL();
+                uint16_t err_heart = MB_Reg_Get(REG_ERROR_CODE);
+                MB_Reg_Set(REG_ERROR_CODE, err_heart | ERR_HEARTBEAT_TIMEOUT); // 叠加心跳超时错误
+                taskEXIT_CRITICAL();
                 LOGE("[Heartbeat] Timeout (>1 min). Relay 2 SET to 0.\r\n");
             }
         }
     }
 }
-
-

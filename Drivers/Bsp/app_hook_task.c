@@ -48,10 +48,16 @@ const osThreadAttr_t relay_heartbeat_attributes = {
 osThreadId_t sys_supervisor_handle;
 const osThreadAttr_t sys_supervisor_attributes = {
     .name = "SysSupervisor",
-    .stack_size = 1024 * 2,
+    .stack_size = 1024 * 4,
     .priority = (osPriority_t)osPriorityBelowNormal, 
 };
-
+// 工作状态判定线程
+osThreadId_t work_mode_handle;
+const osThreadAttr_t work_mode_attributes = {
+    .name = "WorkModeTask",
+    .stack_size = 1024 * 2,
+    .priority = (osPriority_t)osPriorityNormal,
+};
 EventGroupHandle_t eg = NULL; 
 
 void EventGroupCreate_Init(void) {
@@ -173,7 +179,15 @@ void sys_supervisor_thread(void *argument)
         osDelay(100); 
     }
 }
-
+// 工作状态判定线程
+void work_mode_thread(void *argument)
+{
+    for (;;)
+    {
+        work_mode_logic();
+        osDelay(100); 
+    }
+}
 // 吊钩系统总初始化入口
 void init_app_hook_task() {
     
@@ -198,4 +212,5 @@ void init_app_hook_task() {
     relay_heartbeat_handle = osThreadNew(relay_heartbeat_thread, NULL, &relay_heartbeat_attributes);
     gps_standby_handle = osThreadNew(gps_standby_thread, NULL, &gps_standby_attributes);
     sys_supervisor_handle = osThreadNew(sys_supervisor_thread, NULL, &sys_supervisor_attributes);
+    work_mode_handle = osThreadNew(work_mode_thread, NULL, &work_mode_attributes);
 }

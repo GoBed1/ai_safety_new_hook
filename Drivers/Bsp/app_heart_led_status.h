@@ -6,5 +6,6 @@
 
 void sys_supervisor_process(void);
 
+void work_mode_logic(void);
 
 #endif // APP_HEART_LED_STATUS_H

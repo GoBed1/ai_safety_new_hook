@@ -193,13 +193,20 @@ extern "C"
 /* 7. 系统错误码定义 (对应 1s 内心跳灯闪烁次数，最大支持 5 次)                 */
 /* ========================================================================= */
 typedef enum {
-    ERR_NONE            = 0,  // 正常状态 (心跳灯正常翻转)
-    ERR_RESERVED_1   = 1,  // 预留位置
-    ERR_RESERVED_2   = 2,  // 预留位置
-    ERR_BMS_READ_FAIL   = 3,  // BMS 电量读取失败 (闪3次)
+    ERR_NONE            = 0x00,  // 正常状态 (心跳灯正常翻转)
+    ERR_HEARTBEAT_TIMEOUT   = 0x01,  // 接收心跳超时 (闪1次)
+    ERR_RESERVED_2   = 0x02,  // 预留位置
+    ERR_BMS_READ_FAIL   = 0x04,  // BMS 电量读取失败 (闪3次)
 
 } SystemErrorCode_t;
-
+//工作模式枚举定义
+typedef enum {
+    MODE_DEVICE_STANDBY = 0,
+    MODE_COM_WORKING = 1,
+    MODE_LOW_BATTERY = 2,
+    DEVICE_ERROR = 3,
+                         //超过2个错误，心跳灯每秒闪2次
+} WorkMode_t;
 
 #ifdef __cplusplus
 }

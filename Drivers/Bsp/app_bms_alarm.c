@@ -272,9 +272,6 @@ void modbus_bms_handle(void)
         if (xTaskGetTickCount() - last_500ms >= pdMS_TO_TICKS(500))
         {
             last_500ms += pdMS_TO_TICKS(500);
-            buzzer_logic();
-            led_logic();
-
             // 采样放电时间
             ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_REMAIN_DISCHARGE]);
             int err1 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
@@ -326,13 +323,19 @@ void modbus_bms_handle(void)
                 MB_Reg_Set(STATUS_BMS_BATTERY, bms_read_results[READ_BATT_LEVEL]);
                 LOGD("bms led sound modbus master read success,Battery = %d\n", bms_read_results[READ_BATT_LEVEL]);
                 //读取成功，清除系统错误码
-                MB_Reg_Set(REG_ERROR_CODE, ERR_NONE);
+                taskENTER_CRITICAL();
+                uint16_t err_bms = MB_Reg_Get(REG_ERROR_CODE);
+                MB_Reg_Set(REG_ERROR_CODE, err_bms & ~ERR_BMS_READ_FAIL);
+                taskEXIT_CRITICAL();
             }
             else
             {
                 LOGE("bms led sound modbus master read fail  \n");
-                // 这里的数字即代表错误时闪烁的次数（例如填3就闪3下，最多支持5）
-                MB_Reg_Set(REG_ERROR_CODE, ERR_BMS_READ_FAIL);
+                //读取失败，设置系统错误码为BMS读取出错
+                taskENTER_CRITICAL();
+                uint16_t err_bms = MB_Reg_Get(REG_ERROR_CODE);
+                MB_Reg_Set(REG_ERROR_CODE, err_bms | ERR_BMS_READ_FAIL);
+                taskEXIT_CRITICAL();
             }
 
             // 读取总电压
@@ -417,37 +420,5 @@ void modbus_bms_handle(void)
             charge_idx = 0;
             charge_count = 0;
         }
-
-        // 判断工作状态模式
-        uint16_t current_led = MB_Reg_Get(STATUS_LED_SWITCH);
-        uint16_t current_buzzer = MB_Reg_Get(STATUS_BUZZER);
-        uint16_t current_battery = MB_Reg_Get(STATUS_BMS_BATTERY);
-
-        if ((current_led == 1 && current_buzzer == 1) ||
-            (current_led == 1 && current_buzzer == 0) ||
-            (current_led == 0 && current_buzzer == 1))
-        {
-            if (current_battery <= LOW_BATTERY_THRESHOLD)
-            {
-                MB_Reg_Set(STATUS_WORK_MODE, 2);
-            }
-            else
-            {
-                MB_Reg_Set(STATUS_WORK_MODE, 1);
-            }
-        }
-        else
-        {
-            if (current_battery <= LOW_BATTERY_THRESHOLD)
-            {
-                MB_Reg_Set(STATUS_WORK_MODE, 2);
-            }
-            else
-            {
-                MB_Reg_Set(STATUS_WORK_MODE, 0);
-            }
-        }
-
-        osDelay(500);
 }
 
