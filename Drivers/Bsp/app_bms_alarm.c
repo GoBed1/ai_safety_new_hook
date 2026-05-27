@@ -186,75 +186,77 @@ void buzzer_logic(void)
 // ========== 灯光通信处理逻辑 ==========
 void led_logic(void)
 {
-    static uint8_t led_timeout_count = 0;//掉线错误计数器
+    static uint8_t led_timeout_count = 0; // 掉线错误计数器
+    
     uint16_t cmd_led_switch = MB_Reg_Get(CMD_LED_SWITCH);
     uint16_t status_led_switch = MB_Reg_Get(STATUS_LED_SWITCH);
+    uint16_t current_err = MB_Reg_Get(REG_ERROR_CODE);
 
-    if (cmd_led_switch == 1 && status_led_switch == 0)
+    // 触发通信的条件：命令和状态不一致，或者（当前已经处于掉线状态，必须主动探测它是否恢复）
+    if ((cmd_led_switch != status_led_switch) || (current_err & ERR_LED_OFFLINE))
     {
-        LOGI(" LED on \n");
         cmd_telegram.u16RegAdd = REG_LED_CTRL;
-        cmd_payload = CMD_LED_SLOW_FLASH;
-        ModbusQuery(&bms_sound_light_app, cmd_telegram);
-        uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
-        if (err == OP_OK_QUERY)
+        
+        // 根据主机想要的状态打包数据
+        if (cmd_led_switch == 1)
         {
-            led_timeout_count = 0;// 重置掉线计数
-            LOGI("LED on write success \n");
-            MB_Reg_Set(STATUS_LED_SWITCH, 1);
-            taskENTER_CRITICAL();
-            uint16_t err_led = MB_Reg_Get(REG_ERROR_CODE);
-            MB_Reg_Set(REG_ERROR_CODE, err_led & ~ERR_LED_OFFLINE);
-            taskEXIT_CRITICAL();
+            cmd_payload = CMD_LED_SLOW_FLASH;
         }
         else
         {
-            LOGE("LED on write fail : %d \n", err);
-            led_timeout_count++;
+            cmd_payload = CMD_LED_OFF;
         }
-    }
-
-    if (cmd_led_switch == 0 && MB_Reg_Get(STATUS_LED_SWITCH) == 1)
-    {
-        LOGI(" LED off \n");
-        cmd_telegram.u16RegAdd = REG_LED_CTRL;
-        cmd_payload = CMD_LED_OFF;
         ModbusQuery(&bms_sound_light_app, cmd_telegram);
         uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
+        
+        // === 判定回复 ===
         if (err == OP_OK_QUERY)
         {
-            LOGI("LED off write success : %d \n", err);
-            MB_Reg_Set(STATUS_LED_SWITCH, 0);
-
-            led_timeout_count = 0;
-            taskENTER_CRITICAL();
-            uint16_t err_code = MB_Reg_Get(REG_ERROR_CODE);
-            MB_Reg_Set(REG_ERROR_CODE, err_code & ~ERR_LED_OFFLINE);
-            taskEXIT_CRITICAL();
+            LOGI("LED write success\n");
+            MB_Reg_Set(STATUS_LED_SWITCH, cmd_led_switch); 
+            // 如果之前是掉线状态，说明现在重新接好了，执行恢复大清洗
+            if (current_err & ERR_LED_OFFLINE)
+            {
+                LOGI("LED Reconnected! Clearing offline error.\n");
+                taskENTER_CRITICAL();
+                uint16_t err_led = MB_Reg_Get(REG_ERROR_CODE);
+                MB_Reg_Set(REG_ERROR_CODE, err_led & ~ERR_LED_OFFLINE);
+                taskEXIT_CRITICAL();
+            }
+            
+            led_timeout_count = 0; 
         }
         else
         {
-            LOGE("LED off write fail : %d \n", err);
-            led_timeout_count++;
+            // 通信失败，累计错误（最高只加到 3）
+            if (led_timeout_count < 3) 
+            {
+                led_timeout_count++;
+                logE("LED write fail, timeout count = %d\n", led_timeout_count);
+            }
         }
     }
-    // ===== 掉线异常判定=====
+
+    // ===== 掉线异常叠加判定 =====
     if (led_timeout_count >= 3)
     {
+        uint8_t need_log = 0;
         taskENTER_CRITICAL();
         uint16_t err_code = MB_Reg_Get(REG_ERROR_CODE);
-        
+        // 只有当错误码还没写进去时，才写一次（防止疯狂打印）
         if ((err_code & ERR_LED_OFFLINE) == 0) 
         {
-            MB_Reg_Set(REG_ERROR_CODE, err_code | ERR_LED_OFFLINE); // 叠加掉线错误
-            
+            MB_Reg_Set(REG_ERROR_CODE, err_code | ERR_LED_OFFLINE); 
+            need_log = 1;
         }
         taskEXIT_CRITICAL();
-        LOGE("LED OFFLINE ERROR! Timeout >= 3 times.\n");
-        // 防止计数器无限累加溢出，将其限制在 3
-        led_timeout_count = 3; 
+        if (need_log)//只在真正状态改变时打印一次
+        {
+            LOGE("LED OFFLINE ERROR! Timeout >= 3 times.\n");
+        }
     }
 }
+
 void init_bms_alarm_module(void)
 {
     extern UART_HandleTypeDef huart8;
