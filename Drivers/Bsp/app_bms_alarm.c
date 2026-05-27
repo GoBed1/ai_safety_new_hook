@@ -461,3 +461,37 @@ void modbus_bms_handle(void)
         charge_count = 0;
     }
 }
+
+// =================================================================
+// 设备上电自检程序 (POST: Power-On Self-Test)
+// =================================================================
+void power_on_self_test(void)
+{
+    LOGI("[POST] System Power-On Self-Test started...\n");
+
+    // 1. 延时2500ms (等待 MCU 稳定运行)
+    osDelay(2500); 
+
+  cmd_telegram.u16RegAdd = 0x2303; 
+    cmd_payload = 0x0001; // 数据位：播放物理顺序第 1 曲
+    
+    ModbusQuery(&bms_sound_light_app, cmd_telegram);
+    uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+    
+    if (err == OP_OK_QUERY)
+    {
+        LOGI("[POST] Sound & Light test command sent successfully!\n");
+    }
+    else
+    {
+        LOGE("[POST] Sound & Light test command FAILED!\n");
+    }
+
+    // 4. 同步 Modbus 状态机寄存器，防止后续逻辑误判
+    MB_Reg_Set(STATUS_LED_SWITCH, 0);
+    MB_Reg_Set(STATUS_BUZZER, 0);
+
+    LOGI("[POST] Power-On Self-Test completed!\n");
+
+}
+

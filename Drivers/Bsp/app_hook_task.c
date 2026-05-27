@@ -135,6 +135,7 @@ void RFID_master_thread(void *argument)
 }
 void ai_safy_master_thread(void *argument)
 {
+    power_on_self_test(); // 电源上电自检
     for (;;)
     {
         g_task_alive_flags |= TASK_AI_SAFY_ALIVE; // 看门狗打卡

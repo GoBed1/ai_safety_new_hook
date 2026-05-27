@@ -7,4 +7,6 @@ void init_bms_alarm_module(void);
 void modbus_alarm_handle(void);
 void modbus_bms_handle(void);
 
+void power_on_self_test(void);
+
 #endif // APP_BMS_ALARM_H
