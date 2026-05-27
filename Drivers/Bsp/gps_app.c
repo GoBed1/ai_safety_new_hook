@@ -12,7 +12,7 @@ static void set_alarm_b(uint8_t utc_h, uint8_t utc_m);
 static void gps_sync_rtc_once(void);
 static void print_internal_rtc_time(void);
 static uint8_t rtc_is_wakeup_from_standby(void);
-
+uint16_t is_soft_standby = 0; // 软休眠状态标志（爆闪灯断电）
 // 读取PWR标志位，1=来自待机唤醒，0=正常上电
 static uint8_t rtc_is_wakeup_from_standby(void)
 {
@@ -81,7 +81,8 @@ void rtc_power_init(void)
 
     MB_Reg_Set(STATUS_POWER_OFF_TIME, POWER_OFF_DEFAULT);
     MB_Reg_Set(STATUS_POWER_ON_TIME, POWER_ON_DEFAULT);
-    MB_Reg_Set(STANDBY_ENABLE, 1); // 默认启用定时待机功能
+    MB_Reg_Set(SOFT_STANDBY_ENABLE, 1); // 软待机默认开启
+
 
     if (rtc_is_wakeup_from_standby())
     {
@@ -107,7 +108,6 @@ void rtc_power_init(void)
         }
     }
 }
-
 
 void update_gps_app(void)
 {
@@ -161,7 +161,7 @@ void update_gps_app(void)
     }
 }
 
-//打印内部RTC时间
+// 打印内部RTC时间
 void print_internal_rtc_time(void)
 {
     RTC_TimeTypeDef sTime = {0};
@@ -233,6 +233,9 @@ void rtc_power_schedule_check(void)
     uint16_t off_hhmm = MB_Reg_Get(STATUS_POWER_OFF_TIME);
     uint16_t on_hhmm = MB_Reg_Get(STATUS_POWER_ON_TIME);
 
+    uint16_t soft_enable  = MB_Reg_Get(SOFT_STANDBY_ENABLE);  // 软休眠开关
+    uint16_t hard_enable  = MB_Reg_Get(STM32_STANDBY_ENABLE); // 硬休眠开关
+
     LOGD("[PWR] internal RTC beijing %02d:%02d | off=%02d:%02d on=%02d:%02d\r\n",
          beijing_h, beijing_m,
          off_hhmm >> 8, off_hhmm & 0xFF,
@@ -241,7 +244,7 @@ void rtc_power_schedule_check(void)
     // 把当前rtc时间暴露在modbusReg中，方便外部监控
     MB_Reg_Set(RTC_TIME, now_hhmm);
 
-    if (now_hhmm == off_hhmm && MB_Reg_Get(STANDBY_ENABLE) == 1) // 精确匹配且待机功能启用
+    if (now_hhmm == off_hhmm && hard_enable == 1) // 精确匹配且stm32待机功能启用
     {
         MB_Reg_Set(CMD_LED_SWITCH, 0);
         MB_Reg_Set(CMD_BUZZER_7M, 0);
@@ -252,6 +255,42 @@ void rtc_power_schedule_check(void)
         uint8_t on_h_utc = ((on_hhmm >> 8) + 24 - TIMEZONE_OFFSET_BEIJING) % 24;
         set_alarm_b(on_h_utc, (uint8_t)(on_hhmm & 0xFF));
         enter_standby();
+    }
+    // 启用软休眠功能（爆闪灯断电）
+    if (soft_enable == 1)
+    {
+        // 触发条件：到达关机时间，且当前不在待机状态
+        if (now_hhmm == off_hhmm && is_soft_standby == 0) 
+        {
+            is_soft_standby = 1;
+            MB_Reg_Set(CMD_LED_SWITCH, 0);
+            MB_Reg_Set(CMD_BUZZER_7M, 0);
+            MB_Reg_Set(CMD_BUZZER_3M, 0);
+            MB_Reg_Set(STATUS_LED_SWITCH, 0);
+            MB_Reg_Set(STATUS_BUZZER, 0);
+
+            HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_RESET);
+            LOGI("[PWR] Enter SOFT standby. Relay 2 OFF.\r\n");
+
+            // 清除可能存在的心跳和掉线错误，防止休眠期间板载LED还在闪错
+            taskENTER_CRITICAL();
+            uint16_t err = MB_Reg_Get(REG_ERROR_CODE);
+            MB_Reg_Set(REG_ERROR_CODE, err & ~(ERR_HEARTBEAT_TIMEOUT | ERR_LED_OFFLINE));
+            taskEXIT_CRITICAL();
+        }else if (now_hhmm == on_hhmm && is_soft_standby == 1)
+        {
+            is_soft_standby = 0; // 标记系统退出软休眠状态
+            
+            HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
+            LOGI("[PWR] Exit SOFT standby. Relay 2 ON.\r\n");
+        }
+    }
+    // 兜底保护：如果上位机中途强行关闭了休眠功能，但系统还卡在待机里，强行唤醒
+    else if (soft_enable == 0 && is_soft_standby == 1)
+    {
+        is_soft_standby = 0;
+        HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
+        LOGI("[PWR] soft standby Disabled. Force Exit SOFT standby.\r\n");
     }
 }
 
@@ -324,7 +363,8 @@ void enter_standby(void)
     HAL_PWR_EnterSTANDBYMode();
 }
 
-void gps_rtc_app_init(void){
+void gps_rtc_app_init(void)
+{
     config_gps_app();
     rtc_power_init();
 }
@@ -341,8 +381,7 @@ void process_gps_logic(void)
     if (xTaskGetTickCount() - last_1000ms >= pdMS_TO_TICKS(1000))
     {
         last_1000ms = xTaskGetTickCount();
-        
+
         rtc_power_schedule_check();
-        
     }
 }

@@ -126,7 +126,8 @@ extern "C"
 #define STATUS_POWER_OFF_TIME                          111     // 定时关机时间
 #define STATUS_POWER_ON_TIME                           112     // 定时开机时间
 #define RTC_TIME                                       114     // 当前RTC时间
-#define STANDBY_ENABLE                                 115     // 休眠使能开关
+#define STM32_STANDBY_ENABLE                           115     // STM32休眠使能开关
+#define SOFT_STANDBY_ENABLE                            116     // 软休眠状态标志（爆闪灯断电）
 
 // 时间格式：高字节=小时 / 低字节=分钟，例如 0x1500 = 21:00
 #define POWER_OFF_DEFAULT                              ((10 << 8) | 22) // 默认关机 22:10 
@@ -194,9 +195,9 @@ extern "C"
 /* ========================================================================= */
 typedef enum {
     ERR_NONE            = 0x00,  // 正常状态 (心跳灯正常翻转)
-    ERR_HEARTBEAT_TIMEOUT   = 0x01,  // 接收心跳超时 (闪1次)
-    ERR_RESERVED_2   = 0x02,  // 预留位置
-    ERR_BMS_READ_FAIL   = 0x04,  // BMS 电量读取失败 (闪3次)
+    ERR_HEARTBEAT_TIMEOUT   = 0x01,  // 接收心跳超时 (第1秒闪1次，3s周期)
+    ERR_LED_OFFLINE   = 0x02,  // LED离线 (第1秒闪2次，3s周期)
+    ERR_BMS_READ_FAIL   = 0x04,  // BMS 电量读取失败 (第1秒闪3次，3s周期)
 
 } SystemErrorCode_t;
 //工作模式枚举定义

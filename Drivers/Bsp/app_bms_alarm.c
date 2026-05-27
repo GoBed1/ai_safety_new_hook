@@ -6,7 +6,7 @@
 #include "usart.h" // 包含 huart8 等串口
 
 extern volatile uint8_t g_task_alive_flags;
-
+extern uint16_t is_soft_standby;
 // 放电时间全局变量
 uint32_t discharge_samples[BMS_SAMPLE_BUFFER_SIZE];
 uint8_t discharge_idx = 0;
@@ -29,10 +29,10 @@ uint16_t modbus_master_buf[128] = {0};
 // =========================================================
 // 1. 发送/控制 专用指令配置
 // =========================================================
-uint16_t cmd_payload = 0; 
+uint16_t cmd_payload = 0;
 modbus_t cmd_telegram = {
-    .u8id = SLAVE_LED_ID,          
-    .u8fct = MB_FC_WRITE_REGISTER, 
+    .u8id = SLAVE_LED_ID,
+    .u8fct = MB_FC_WRITE_REGISTER,
     .u16CoilsNo = 1,
     .u16reg = &cmd_payload // 绑定数据缓存
 
@@ -55,7 +55,7 @@ typedef enum
 // 为每个读取项分配独立的数据接收缓存
 uint16_t bms_read_results[READ_MSG_COUNT] = {0};
 
-// BMS 数据读取配置表 
+// BMS 数据读取配置表
 static modbus_t bms_read_telegrams[READ_MSG_COUNT] = {
     [READ_BATT_LEVEL] = {.u8id = SLAVE_BMS_ID, .u8fct = MB_FC_READ_REGISTERS, .u16RegAdd = REG_BATTERY_LEVEL, .u16CoilsNo = 1, .u16reg = &bms_read_results[READ_BATT_LEVEL]},
     [READ_REMAIN_DISCHARGE] = {.u8id = SLAVE_BMS_ID, .u8fct = MB_FC_READ_REGISTERS, .u16RegAdd = REG_REMAIN_DISCHARGE, .u16CoilsNo = 1, .u16reg = &bms_read_results[READ_REMAIN_DISCHARGE]},
@@ -67,12 +67,15 @@ static modbus_t bms_read_telegrams[READ_MSG_COUNT] = {
 // 1.喇叭逻辑处理函数 ==========
 void buzzer_logic(void)
 {
-   // 1. 获取目标模式：3m 优先于 7m，0 为关闭。
+    // 1. 获取目标模式：3m 优先于 7m，0 为关闭。
     uint16_t raw_target_mode = 0;
     // 【修改点 1】替换为 MB_Reg_Get
-    if (MB_Reg_Get(CMD_BUZZER_3M) == 1) {
+    if (MB_Reg_Get(CMD_BUZZER_3M) == 1)
+    {
         raw_target_mode = 2;
-    } else if (MB_Reg_Get(CMD_BUZZER_7M) == 1) {
+    }
+    else if (MB_Reg_Get(CMD_BUZZER_7M) == 1)
+    {
         raw_target_mode = 1;
     }
 
@@ -153,7 +156,7 @@ void buzzer_logic(void)
         else
         {
             LOGI("BUZZER_7M write success. Entering BUSY.\n");
-           MB_Reg_Set(STATUS_BUZZER, 1);
+            MB_Reg_Set(STATUS_BUZZER, 1);
 
             // 进入 BUSY 状态，并记录起始时间戳
             state = STATE_BUSY;
@@ -183,9 +186,11 @@ void buzzer_logic(void)
 // ========== 灯光通信处理逻辑 ==========
 void led_logic(void)
 {
+    static uint8_t led_timeout_count = 0;//掉线错误计数器
     uint16_t cmd_led_switch = MB_Reg_Get(CMD_LED_SWITCH);
+    uint16_t status_led_switch = MB_Reg_Get(STATUS_LED_SWITCH);
 
-    if (cmd_led_switch == 1 && MB_Reg_Get(STATUS_LED_SWITCH) == 0)
+    if (cmd_led_switch == 1 && status_led_switch == 0)
     {
         LOGI(" LED on \n");
         cmd_telegram.u16RegAdd = REG_LED_CTRL;
@@ -194,12 +199,18 @@ void led_logic(void)
         uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
         if (err == OP_OK_QUERY)
         {
+            led_timeout_count = 0;// 重置掉线计数
             LOGI("LED on write success \n");
             MB_Reg_Set(STATUS_LED_SWITCH, 1);
+            taskENTER_CRITICAL();
+            uint16_t err_led = MB_Reg_Get(REG_ERROR_CODE);
+            MB_Reg_Set(REG_ERROR_CODE, err_led & ~ERR_LED_OFFLINE);
+            taskEXIT_CRITICAL();
         }
         else
         {
             LOGE("LED on write fail : %d \n", err);
+            led_timeout_count++;
         }
     }
 
@@ -214,11 +225,34 @@ void led_logic(void)
         {
             LOGI("LED off write success : %d \n", err);
             MB_Reg_Set(STATUS_LED_SWITCH, 0);
+
+            led_timeout_count = 0;
+            taskENTER_CRITICAL();
+            uint16_t err_code = MB_Reg_Get(REG_ERROR_CODE);
+            MB_Reg_Set(REG_ERROR_CODE, err_code & ~ERR_LED_OFFLINE);
+            taskEXIT_CRITICAL();
         }
         else
         {
             LOGE("LED off write fail : %d \n", err);
+            led_timeout_count++;
         }
+    }
+    // ===== 掉线异常判定=====
+    if (led_timeout_count >= 3)
+    {
+        taskENTER_CRITICAL();
+        uint16_t err_code = MB_Reg_Get(REG_ERROR_CODE);
+        
+        if ((err_code & ERR_LED_OFFLINE) == 0) 
+        {
+            MB_Reg_Set(REG_ERROR_CODE, err_code | ERR_LED_OFFLINE); // 叠加掉线错误
+            
+        }
+        taskEXIT_CRITICAL();
+        LOGE("LED OFFLINE ERROR! Timeout >= 3 times.\n");
+        // 防止计数器无限累加溢出，将其限制在 3
+        led_timeout_count = 3; 
     }
 }
 void init_bms_alarm_module(void)
@@ -234,27 +268,31 @@ void init_bms_alarm_module(void)
 
 void modbus_alarm_handle(void)
 {
+    if (is_soft_standby == 1)
+    {
+        return; 
+    }
     static TickType_t last_500ms = 0;
-    
-   now_volume = MB_Reg_Get(CMD_VOLUME);
 
-        // 音量同步逻辑
-        if (now_volume != last_volume)
+    now_volume = MB_Reg_Get(CMD_VOLUME);
+
+    // 音量同步逻辑
+    if (now_volume != last_volume)
+    {
+        cmd_telegram.u16RegAdd = REG_VOLUME_CTRL;
+        cmd_payload = now_volume;
+        ModbusQuery(&bms_sound_light_app, cmd_telegram);
+        uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
+        if (err == OP_OK_QUERY)
         {
-            cmd_telegram.u16RegAdd = REG_VOLUME_CTRL;
-            cmd_payload = now_volume;
-            ModbusQuery(&bms_sound_light_app, cmd_telegram);
-            uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
-            if (err == OP_OK_QUERY)
-            {
-                LOGI("BUZZER_VOLUME write success, lastvolume=%d , nowVolume=%d,modbusReg[CMD_VOLUME]:%d\n", last_volume, now_volume, MB_Reg_Get(CMD_VOLUME));
-                last_volume = now_volume;
-            }
-            else
-            {
-                LOGE("BUZZER_VOLUME write fail : %d \n", err);
-            }
+            LOGI("BUZZER_VOLUME write success, lastvolume=%d , nowVolume=%d,modbusReg[CMD_VOLUME]:%d\n", last_volume, now_volume, MB_Reg_Get(CMD_VOLUME));
+            last_volume = now_volume;
         }
+        else
+        {
+            LOGE("BUZZER_VOLUME write fail : %d \n", err);
+        }
+    }
     // 2. 灯光与喇叭控制 (500ms周期)
     if (xTaskGetTickCount() - last_500ms >= pdMS_TO_TICKS(500))
     {
@@ -268,157 +306,156 @@ void modbus_bms_handle(void)
 {
     static TickType_t last_500ms = 0;
     static TickType_t last_10s = 0;
- // 每 500ms 轮询
-        if (xTaskGetTickCount() - last_500ms >= pdMS_TO_TICKS(500))
+    // 每 500ms 轮询
+    if (xTaskGetTickCount() - last_500ms >= pdMS_TO_TICKS(500))
+    {
+        last_500ms += pdMS_TO_TICKS(500);
+        // 采样放电时间
+        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_REMAIN_DISCHARGE]);
+        int err1 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
+        if (err1 == OP_OK_QUERY)
         {
-            last_500ms += pdMS_TO_TICKS(500);
-            // 采样放电时间
-            ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_REMAIN_DISCHARGE]);
-            int err1 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
-            if (err1 == OP_OK_QUERY)
+            uint16_t val = bms_read_results[READ_REMAIN_DISCHARGE];
+            if (val != 0xFFFF)
             {
-                uint16_t val = bms_read_results[READ_REMAIN_DISCHARGE];
-                if (val != 0xFFFF)
-                {
-                    discharge_samples[discharge_idx % BMS_SAMPLE_VALID_COUNT] = val;
-                    discharge_idx++;
-                    if (discharge_count < BMS_SAMPLE_VALID_COUNT)
-                        discharge_count++;
-                }
-            }
-            else
-            {
-                LOGE("READ_REMAIN_DISCHARGE read fail : %d \n", err1);
-            }
-
-            // 采样充电时间
-            ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_REMAIN_CHARGE]);
-            int err2 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
-            if (err2 == OP_OK_QUERY)
-            {
-                uint16_t val = bms_read_results[READ_REMAIN_CHARGE];
-                if (val != 0xFFFF)
-                {
-                    charge_samples[charge_idx % BMS_SAMPLE_VALID_COUNT] = val;
-                    charge_idx++;
-                    if (charge_count < BMS_SAMPLE_VALID_COUNT)
-                        charge_count++;
-                }
-            }
-            else
-            {
-                LOGE("bms charge time modbus master read fail %d \n", err2);
+                discharge_samples[discharge_idx % BMS_SAMPLE_VALID_COUNT] = val;
+                discharge_idx++;
+                if (discharge_count < BMS_SAMPLE_VALID_COUNT)
+                    discharge_count++;
             }
         }
-
-        // 每 10s 执行一次
-        if (xTaskGetTickCount() - last_10s >= pdMS_TO_TICKS(10000))
+        else
         {
-            last_10s += pdMS_TO_TICKS(10000);
-
-            // 读取电量
-            ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_BATT_LEVEL]);
-            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
-            {
-                MB_Reg_Set(STATUS_BMS_BATTERY, bms_read_results[READ_BATT_LEVEL]);
-                LOGD("bms led sound modbus master read success,Battery = %d\n", bms_read_results[READ_BATT_LEVEL]);
-                //读取成功，清除系统错误码
-                taskENTER_CRITICAL();
-                uint16_t err_bms = MB_Reg_Get(REG_ERROR_CODE);
-                MB_Reg_Set(REG_ERROR_CODE, err_bms & ~ERR_BMS_READ_FAIL);
-                taskEXIT_CRITICAL();
-            }
-            else
-            {
-                LOGE("bms led sound modbus master read fail  \n");
-                //读取失败，设置系统错误码为BMS读取出错
-                taskENTER_CRITICAL();
-                uint16_t err_bms = MB_Reg_Get(REG_ERROR_CODE);
-                MB_Reg_Set(REG_ERROR_CODE, err_bms | ERR_BMS_READ_FAIL);
-                taskEXIT_CRITICAL();
-            }
-
-            // 读取总电压
-            ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_TOTAL_VOLTAGE]);
-            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
-            {
-                MB_Reg_Set(STATUS_BMS_TOTAL_VOLTAGE, bms_read_results[READ_TOTAL_VOLTAGE]);
-                LOGD("bms total voltage = %d\n", bms_read_results[READ_TOTAL_VOLTAGE]);
-            }
-            else
-            {
-                LOGE("bms total voltage modbus master read fail  \n");
-            }
-
-            // 读取总电流及充放电状态
-            ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_TOTAL_CURRENT]);
-            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
-            {
-                int16_t val = (int16_t)bms_read_results[READ_TOTAL_CURRENT];
-                // 判断是否充电状态
-                if (val < 0)
-                {
-                    MB_Reg_Set(STATUS_BMS_TOTAL_CURRENT, (uint16_t)(-val));
-                    MB_Reg_Set(STATUS_BMS_IS_charge, 0); // 放电状态
-                }
-                else if (val > 0)
-                {
-                    MB_Reg_Set(STATUS_BMS_TOTAL_CURRENT, (uint16_t)val);
-                    MB_Reg_Set(STATUS_BMS_IS_charge, 1); // 充电状态
-                }
-                else
-                {
-                    MB_Reg_Set(STATUS_BMS_IS_charge, 2); // 静止状态
-                }
-                LOGD("bms charge status = %d\n", MB_Reg_Get(STATUS_BMS_IS_charge));
-                LOGD("bms total current = %d===%d\n", MB_Reg_Get(STATUS_BMS_TOTAL_CURRENT), val);
-            }
-            else
-            {
-                LOGE("bms total current modbus master read fail  \n");
-            }
-
-            // 每500ms采样一次放电时间，每10s执行一次平均值放入寄存器（剩余放电时间）
-            if (discharge_count > 0)
-            {
-                uint32_t sum = 0;
-                for (uint8_t i = 0; i < discharge_count; i++)
-                {
-                    sum += discharge_samples[i];
-                }
-                uint16_t avg = (uint16_t)(sum / discharge_count);
-
-                MB_Reg_Set(STATUS_BMS_REMAIN_DISCHARGE_TIME, avg);
-                LOGD("remain discharge time avg = %d min\n", avg);
-            }
-            else
-            {
-                MB_Reg_Set(STATUS_BMS_REMAIN_DISCHARGE_TIME, 0xFFFF);
-                LOGE("remain discharge time fail\n");
-            }
-            memset(discharge_samples, 0, sizeof(discharge_samples));
-            discharge_idx = 0;
-            discharge_count = 0;
-
-            // 每500ms采样一次充电时间，每10s执行一次平均值放入寄存器（剩余充电时间）
-            if (charge_count > 0)
-            {
-                uint32_t sum = 0;
-                for (uint8_t i = 0; i < charge_count; i++)
-                {
-                    sum += charge_samples[i];
-                }
-                MB_Reg_Set(STATUS_BMS_REMAIN_CHARGE_TIME, (uint16_t)(sum / charge_count));
-                LOGD("remain charge time avg = %d min\n", (uint16_t)(sum / charge_count));
-            }
-            else
-            {
-                MB_Reg_Set(STATUS_BMS_REMAIN_CHARGE_TIME, 0xFFFF);
-                LOGE("remain charge time fail\n");
-            }
-            memset(charge_samples, 0, sizeof(charge_samples));
-            charge_idx = 0;
-            charge_count = 0;
+            LOGE("READ_REMAIN_DISCHARGE read fail : %d \n", err1);
         }
+
+        // 采样充电时间
+        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_REMAIN_CHARGE]);
+        int err2 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
+        if (err2 == OP_OK_QUERY)
+        {
+            uint16_t val = bms_read_results[READ_REMAIN_CHARGE];
+            if (val != 0xFFFF)
+            {
+                charge_samples[charge_idx % BMS_SAMPLE_VALID_COUNT] = val;
+                charge_idx++;
+                if (charge_count < BMS_SAMPLE_VALID_COUNT)
+                    charge_count++;
+            }
+        }
+        else
+        {
+            LOGE("bms charge time modbus master read fail %d \n", err2);
+        }
+    }
+
+    // 每 10s 执行一次
+    if (xTaskGetTickCount() - last_10s >= pdMS_TO_TICKS(10000))
+    {
+        last_10s += pdMS_TO_TICKS(10000);
+
+        // 读取电量
+        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_BATT_LEVEL]);
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
+        {
+            MB_Reg_Set(STATUS_BMS_BATTERY, bms_read_results[READ_BATT_LEVEL]);
+            LOGD("bms led sound modbus master read success,Battery = %d\n", bms_read_results[READ_BATT_LEVEL]);
+            // 读取成功，清除系统错误码
+            taskENTER_CRITICAL();
+            uint16_t err_bms = MB_Reg_Get(REG_ERROR_CODE);
+            MB_Reg_Set(REG_ERROR_CODE, err_bms & ~ERR_BMS_READ_FAIL);
+            taskEXIT_CRITICAL();
+        }
+        else
+        {
+            LOGE("bms led sound modbus master read fail  \n");
+            // 读取失败，设置系统错误码为BMS读取出错
+            taskENTER_CRITICAL();
+            uint16_t err_bms = MB_Reg_Get(REG_ERROR_CODE);
+            MB_Reg_Set(REG_ERROR_CODE, err_bms | ERR_BMS_READ_FAIL);
+            taskEXIT_CRITICAL();
+        }
+
+        // 读取总电压
+        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_TOTAL_VOLTAGE]);
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
+        {
+            MB_Reg_Set(STATUS_BMS_TOTAL_VOLTAGE, bms_read_results[READ_TOTAL_VOLTAGE]);
+            LOGD("bms total voltage = %d\n", bms_read_results[READ_TOTAL_VOLTAGE]);
+        }
+        else
+        {
+            LOGE("bms total voltage modbus master read fail  \n");
+        }
+
+        // 读取总电流及充放电状态
+        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_TOTAL_CURRENT]);
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
+        {
+            int16_t val = (int16_t)bms_read_results[READ_TOTAL_CURRENT];
+            // 判断是否充电状态
+            if (val < 0)
+            {
+                MB_Reg_Set(STATUS_BMS_TOTAL_CURRENT, (uint16_t)(-val));
+                MB_Reg_Set(STATUS_BMS_IS_charge, 0); // 放电状态
+            }
+            else if (val > 0)
+            {
+                MB_Reg_Set(STATUS_BMS_TOTAL_CURRENT, (uint16_t)val);
+                MB_Reg_Set(STATUS_BMS_IS_charge, 1); // 充电状态
+            }
+            else
+            {
+                MB_Reg_Set(STATUS_BMS_IS_charge, 2); // 静止状态
+            }
+            LOGD("bms charge status = %d\n", MB_Reg_Get(STATUS_BMS_IS_charge));
+            LOGD("bms total current = %d===%d\n", MB_Reg_Get(STATUS_BMS_TOTAL_CURRENT), val);
+        }
+        else
+        {
+            LOGE("bms total current modbus master read fail  \n");
+        }
+
+        // 每500ms采样一次放电时间，每10s执行一次平均值放入寄存器（剩余放电时间）
+        if (discharge_count > 0)
+        {
+            uint32_t sum = 0;
+            for (uint8_t i = 0; i < discharge_count; i++)
+            {
+                sum += discharge_samples[i];
+            }
+            uint16_t avg = (uint16_t)(sum / discharge_count);
+
+            MB_Reg_Set(STATUS_BMS_REMAIN_DISCHARGE_TIME, avg);
+            LOGD("remain discharge time avg = %d min\n", avg);
+        }
+        else
+        {
+            MB_Reg_Set(STATUS_BMS_REMAIN_DISCHARGE_TIME, 0xFFFF);
+            LOGE("remain discharge time fail\n");
+        }
+        memset(discharge_samples, 0, sizeof(discharge_samples));
+        discharge_idx = 0;
+        discharge_count = 0;
+
+        // 每500ms采样一次充电时间，每10s执行一次平均值放入寄存器（剩余充电时间）
+        if (charge_count > 0)
+        {
+            uint32_t sum = 0;
+            for (uint8_t i = 0; i < charge_count; i++)
+            {
+                sum += charge_samples[i];
+            }
+            MB_Reg_Set(STATUS_BMS_REMAIN_CHARGE_TIME, (uint16_t)(sum / charge_count));
+            LOGD("remain charge time avg = %d min\n", (uint16_t)(sum / charge_count));
+        }
+        else
+        {
+            MB_Reg_Set(STATUS_BMS_REMAIN_CHARGE_TIME, 0xFFFF);
+            LOGE("remain charge time fail\n");
+        }
+        memset(charge_samples, 0, sizeof(charge_samples));
+        charge_idx = 0;
+        charge_count = 0;
+    }
 }
-
