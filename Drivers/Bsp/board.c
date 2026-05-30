@@ -34,7 +34,7 @@ const osThreadAttr_t HeartbeatTask_attributes = {
 
 void init_app(void)
 {
-  specify_redirect_uart(&huart1);
+  specify_redirect_uart(&huart5);
   printf("\r\n[INFO] [BOARD] specify redirect printf to huart1\r\n");
 
   init_app_hook_task();
