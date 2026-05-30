@@ -3,9 +3,7 @@
 
 #include <stdint.h>
 #include "system_def.h"
-// #include "board.h"
 #include "cmsis_os.h"
-#include "app_rfid.h"
 
 void init_app_hook_task(void);
 

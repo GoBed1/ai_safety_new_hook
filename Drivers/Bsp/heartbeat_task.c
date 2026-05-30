@@ -15,9 +15,6 @@ void StartHeartbeatTask(void *argument)
     uint8_t error_count = 0;
     for (;;)
     {
-        HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
-
-        
 
         if (g_task_alive_flags == TASK_ALL_ALIVE)
         {
@@ -47,8 +44,6 @@ void StartHeartbeatTask(void *argument)
                     printf("GPS ");
                 if (missing_tasks & TASK_RELAY_ALIVE)
                     printf("RELAY ");
-                if (missing_tasks & TASK_RFID_ALIVE)
-                    printf("RFID ");
                 printf("\r\n");
             }
             // If you don't clock in within 7 seconds, the watchdog reset system has been triggered

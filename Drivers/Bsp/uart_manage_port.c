@@ -14,9 +14,7 @@
 /* port.c */
 #include "uart_manage.h"
 #include "Modbus.h"
-#include "app_rfid.h"
 
-extern RFIDClient RFID_client;
 extern EventGroupHandle_t eg; // 初始化事件组为NULL
 
 /* DMA buffer placement */
@@ -165,23 +163,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
         break;
       }
     }
-
-   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-  if (huart->Instance == huart2.Instance)
-  {
-    if (RFID_client.rx_buf[0] == 0x1B && RFID_client.rx_buf[1] == 0x39 && RFID_client.rx_buf[2] == 0x01) // RFID从机
-    {
-      if (size > 0)
-      {
-        memcpy(RFID_client.Rx_RFID_buf, RFID_client.rx_buf, size);
-        RFID_client.Rx_RFID_len = (uint8_t)size;
-      }
-      HAL_UARTEx_ReceiveToIdle_DMA(&huart2, RFID_client.rx_buf, (uint16_t)sizeof(RFID_client.rx_buf));
-      xEventGroupSetBitsFromISR(eg, EVENT_RFID_RX, &xHigherPriorityTaskWoken);
-    }
-  }
-  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)

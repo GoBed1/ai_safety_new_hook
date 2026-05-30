@@ -1,6 +1,5 @@
 #include "app_hook_task.h"
 #include "modbus_rtu_server_interface.h"
-#include "app_rfid.h"
 #include "app_relay.h"
 #include "app_bms_alarm.h"
 #include "app_heart_led_status.h"
@@ -21,13 +20,6 @@ osThreadId_t ai_safy_master_handle;
 const osThreadAttr_t ai_safy_master_attributes = {
     .name = "AISafyMaster",
     .stack_size = 1024 * 6,
-    .priority = (osPriority_t)osPriorityNormal1,
-};
-// RFID
-osThreadId_t RFID_master_handle;
-const osThreadAttr_t RFID_master_attributes = {
-    .name = "RFIDMaster",
-    .stack_size = 1024 * 4,
     .priority = (osPriority_t)osPriorityNormal1,
 };
 // gps待机线程
@@ -88,50 +80,6 @@ void init_ai_safy_slave(void) {
     
     ModbusInit(&modbus_rtu_server);
     ModbusStart(&modbus_rtu_server);
-}
-//rfid线程
-void RFID_master_thread(void *argument)
-{
-    TickType_t last_check = xTaskGetTickCount();
-    for (;;)
-    {
-        g_task_alive_flags |= TASK_RFID_ALIVE;
-        EventBits_t uxBits = xEventGroupWaitBits(
-            eg,            // 事件组
-            EVENT_RFID_RX, // 等待这个事件
-            pdTRUE,        // 自动清除标志
-            pdFALSE,       // 不需要等待所有位
-            pdMS_TO_TICKS(500)   // 有看门狗的超时时间
-        );
-        if ((uxBits & EVENT_RFID_RX) != 0)
-        {
-            LOGD("Receive rfid: ");
-            uint16_t rfid_valid_reg = MB_Reg_Get(REG_RFID_VALID);
-            LOGD("modbus_reg[3] = %04X (", rfid_valid_reg);
-            for (int i = 15; i >= 0; i--)
-            {
-                LOGD("%d", (rfid_valid_reg >> i) & 1);
-                if (i % 4 == 0 && i != 0)
-                    LOGD(" ");
-            }
-            
-            RFID_OnFrame(&RFID_client,
-                         RFID_client.Rx_RFID_buf,
-                         RFID_client.Rx_RFID_len);
-
-            // 写入Modbus寄存器
-            RFID_WriteToModbusRegs(&RFID_client);
-        }
-
-        if ((TickType_t)(xTaskGetTickCount() - last_check) >= pdMS_TO_TICKS(5000))
-        {
-            last_check = xTaskGetTickCount();
-            RFID_CheckOffline(&RFID_client);
-            RFID_WriteToModbusRegs(&RFID_client);
-        }
-
-        osDelay(1000);
-    }
 }
 void ai_safy_master_thread(void *argument)
 {
@@ -202,16 +150,14 @@ void init_app_hook_task() {
     //继电器初始化
     relay_app_init(); 
     
-    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, RFID_client.rx_buf, (uint16_t)sizeof(RFID_client.rx_buf));
     // 初始化默认音量
     MB_Reg_Set(CMD_VOLUME, DEFAULT_VOLUME); 
     //初始化错误码寄存器为0x0000
     MB_Reg_Set(REG_ERROR_CODE, 0x0000); 
 
-    RFID_master_handle = osThreadNew(RFID_master_thread, NULL, &RFID_master_attributes);
     ai_safy_master_handle = osThreadNew(ai_safy_master_thread, NULL, &ai_safy_master_attributes);
     relay_heartbeat_handle = osThreadNew(relay_heartbeat_thread, NULL, &relay_heartbeat_attributes);
     gps_standby_handle = osThreadNew(gps_standby_thread, NULL, &gps_standby_attributes);
     sys_supervisor_handle = osThreadNew(sys_supervisor_thread, NULL, &sys_supervisor_attributes);
-    work_mode_handle = osThreadNew(work_mode_thread, NULL, &work_mode_attributes);
+    // work_mode_handle = osThreadNew(work_mode_thread, NULL, &work_mode_attributes);
 }
