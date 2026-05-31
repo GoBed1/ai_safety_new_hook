@@ -14,7 +14,7 @@
 /* port.c */
 #include "uart_manage.h"
 #include "Modbus.h"
-
+#include "app_4g.h"
 extern EventGroupHandle_t eg; // 初始化事件组为NULL
 
 /* DMA buffer placement */
@@ -27,10 +27,17 @@ extern EventGroupHandle_t eg; // 初始化事件组为NULL
 
 extern UART_HandleTypeDef huart1;
 extern DMA_HandleTypeDef hdma_usart1_rx;
-static uint8_t uart1_recv_buff[256U] DMA_BUFFER;
-static uint8_t uart1_send_buff[256U] DMA_BUFFER;
-static uint8_t uart1_send_fifo_buff[256U] DMA_BUFFER;
-static uint8_t uart1_process_buff[256U * 4U] DMA_BUFFER;
+static uint8_t uart1_recv_buff[512U] DMA_BUFFER;
+static uint8_t uart1_send_buff[512U] DMA_BUFFER;
+static uint8_t uart1_send_fifo_buff[512U] DMA_BUFFER;
+static uint8_t uart1_process_buff[512U * 4U] DMA_BUFFER;
+
+extern UART_HandleTypeDef huart3;
+extern DMA_HandleTypeDef hdma_usart3_rx;
+static uint8_t uart3_recv_buff[256U] DMA_BUFFER;
+static uint8_t uart3_send_buff[256U] DMA_BUFFER;
+static uint8_t uart3_send_fifo_buff[256U] DMA_BUFFER;
+static uint8_t uart3_process_buff[256U * 4U] DMA_BUFFER;
 
 extern UART_HandleTypeDef huart5;
 extern DMA_HandleTypeDef hdma_uart5_rx;
@@ -39,41 +46,77 @@ static uint8_t uart5_send_buff[256U] DMA_BUFFER;
 static uint8_t uart5_send_fifo_buff[256U] DMA_BUFFER;
 static uint8_t uart5_process_buff[256U * 4U] DMA_BUFFER;
 
-static uint32_t echo_callback(uint8_t *buf, uint16_t len)
+// 【Shell (UART5) 收到数据 -> 转发给 4G (UART1)】
+static uint32_t shell_recv_callback(uint8_t *buf, uint16_t len)
 {
-  (void)uart_manage_dma_send_by_name("echo", buf, len);
+  printf("\r\n[DEBUG] Shell recv %d : %.*s\r\n", len, len, buf);
+  // if (craner_at_handler(buf, len) != 0U)
+	// {
+	// 	return 0U;
+	// }
+
+	// if (usr_at_handler(buf, len) != 0U)
+	// {
+	// 	return 0U;
+	// }
+  // 转发给名为 "4g" 的接口
+  (void)uart_manage_dma_send_by_name("4g", buf, len);
   return 0U;
 }
-
+extern ParserCtx_t g_parser_ctx; // 4G数据解析上下文
+extern void parser_process_byte(ParserCtx_t *ctx, uint8_t byte); // 4G数据逐字节解析函数
+static uint32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
+{
+  printf("\r\n[DEBUG] 4G  recv %d : %.*s\r\n", len, len, buf);
+ for (uint16_t i = 0; i < len; i++) {
+        parser_process_byte(&g_parser_ctx, buf[i]);
+    }
+  return 0U;
+}
 const uart_inferface_t uart_manage_table[] = {
+ {
+    .name = "shell",                     
+    .uart_h = &huart5,                   
+    .dma_h = &hdma_uart5_rx,
+    .recv_buffer = uart5_recv_buff,
+    .recv_buffer_size = sizeof(uart5_recv_buff),
+    .process_buffer = uart5_process_buff,
+    .process_buffer_size = sizeof(uart5_process_buff),
+    .recv_callback = shell_recv_callback,   
+    .send_buffer = uart5_send_buff,
+    .send_buffer_size = sizeof(uart5_send_buff),
+    .send_fifo_buffer = uart5_send_fifo_buff,
+    .send_fifo_size = sizeof(uart5_send_fifo_buff),
+    .send_callback = NULL,
+  },
   {
-    .name = "echo",
-    .uart_h = &huart1,
+    .name = "4g",                           
+    .uart_h = &huart1,                      
     .dma_h = &hdma_usart1_rx,
     .recv_buffer = uart1_recv_buff,
     .recv_buffer_size = sizeof(uart1_recv_buff),
     .process_buffer = uart1_process_buff,
     .process_buffer_size = sizeof(uart1_process_buff),
-    .recv_callback = echo_callback,// callback_direct_mode
+    .recv_callback = uart_4g_recv_callback, 
     .send_buffer = uart1_send_buff,
     .send_buffer_size = sizeof(uart1_send_buff),
     .send_fifo_buffer = uart1_send_fifo_buff,
     .send_fifo_size = sizeof(uart1_send_fifo_buff),
     .send_callback = NULL,
   },
-  {
+    {
     .name = "gps",
-    .uart_h = &huart5,
-    .dma_h = &hdma_uart5_rx,
-    .recv_buffer = uart5_recv_buff,
-    .recv_buffer_size = sizeof(uart5_recv_buff),
-    .process_buffer = uart5_process_buff,
-    .process_buffer_size = sizeof(uart5_process_buff),
+    .uart_h = &huart3,
+    .dma_h = &hdma_usart3_rx,
+    .recv_buffer = uart3_recv_buff,
+    .recv_buffer_size = sizeof(uart3_recv_buff),
+    .process_buffer = uart3_process_buff,
+    .process_buffer_size = sizeof(uart3_process_buff),
     .recv_callback = NULL,// ring_task_mode
-    .send_buffer = uart5_send_buff,
-    .send_buffer_size = sizeof(uart5_send_buff),
-    .send_fifo_buffer = uart5_send_fifo_buff,
-    .send_fifo_size = sizeof(uart5_send_fifo_buff),
+    .send_buffer = uart3_send_buff,
+    .send_buffer_size = sizeof(uart3_send_buff),
+    .send_fifo_buffer = uart3_send_fifo_buff,
+    .send_fifo_size = sizeof(uart3_send_fifo_buff),
     .send_callback = NULL,
   },
 };

@@ -40,15 +40,20 @@ extern "C"
 #define MASTER_INT_DISABLE()   do{__disable_irq(); }while(0)
 #define MASTER_INT_RESTORE(x)  do{__set_PRIMASK(x);}while(0)
 
-#define CRITICAL_SETCION_ENTER()                      \
+#define CRITICAL_SETCION_ENTER(cpu_state)             \
     do                                                \
     {                                                 \
-        INT_STATE cpu_state = MASTER_INT_STATE_GET(); \
-        MASTER_INT_DISABLE();
+        (cpu_state) = __get_PRIMASK();                \
+        __disable_irq();                              \
+    }                                                 \
+    while (0)
 
-#define CRITICAL_SETCION_EXIT()        \
-        MASTER_INT_RESTORE(cpu_state); \
-    }                                  \
+// 退出临界区宏：利用保存的状态恢复中断
+#define CRITICAL_SETCION_EXIT(cpu_state)              \
+    do                                                \
+    {                                                 \
+        __set_PRIMASK(cpu_state);                     \
+    }                                                 \
     while (0)
 
 #define var_cpu_sr() register unsigned long cpu_sr

@@ -8,24 +8,30 @@ static uint16_t modbus_input_registers[REGS_TOTAL_NUM] = {0};
 uint16_t MB_Reg_Get(uint16_t index) {
     if (index >= REGS_TOTAL_NUM) return 0;
     uint16_t val;
-    taskENTER_CRITICAL(); // FreeRTOS 临界区保护
+   uint32_t ms_cpu_sr; // 1. 在本地定义一个变量用来保存中断状态
+    
+    CRITICAL_SETCION_ENTER(ms_cpu_sr); // 2. 进入临界区（传入变量）
     val = modbus_registers[index];
-    taskEXIT_CRITICAL();
+    CRITICAL_SETCION_EXIT(ms_cpu_sr);
     return val;
 }
 
 void MB_Reg_Set(uint16_t index, uint16_t value) {
     if (index >= REGS_TOTAL_NUM) return;
-    taskENTER_CRITICAL();
+    uint32_t ms_cpu_sr; // 1. 在本地定义一个变量用来保存中断状态
+    
+    CRITICAL_SETCION_ENTER(ms_cpu_sr);
     modbus_registers[index] = value;
-    taskEXIT_CRITICAL();
+    CRITICAL_SETCION_EXIT(ms_cpu_sr);
 }
 
 void MB_Reg_SetBits(uint16_t index, uint16_t mask, uint16_t value) {
     if (index >= REGS_TOTAL_NUM) return;
-    taskENTER_CRITICAL();
+    uint32_t ms_cpu_sr; // 1. 在本地定义一个变量用来保存中断状态
+    
+    CRITICAL_SETCION_ENTER(ms_cpu_sr);
     modbus_registers[index] = (modbus_registers[index] & ~mask) | (value & mask);
-    taskEXIT_CRITICAL();
+    CRITICAL_SETCION_EXIT(ms_cpu_sr);
 }
 
 uint16_t* MB_Reg_GetPointer(void) { return modbus_registers; }
