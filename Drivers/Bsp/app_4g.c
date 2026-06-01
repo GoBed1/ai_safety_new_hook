@@ -5,22 +5,30 @@
 // 业务处理函数声明
 static void handle_light_cmd(ProtocolFrame_t *frame);
 static void handle_bms_cmd(ProtocolFrame_t *frame);
-static void handle_system_cmd(ProtocolFrame_t *frame);
-static void handle_time_cmd(ProtocolFrame_t *frame);
+static void handle_heartbeat_en_cmd(ProtocolFrame_t *frame);
 static void handle_heartbeat_cmd(ProtocolFrame_t *frame);
+static void handle_work_mode_cmd(ProtocolFrame_t *frame);
+static void handle_sleep_en_cmd(ProtocolFrame_t *frame);
+static void handle_sleep_time_cmd(ProtocolFrame_t *frame);
+static void handle_time_cmd(ProtocolFrame_t *frame);
+static void handle_sys_error_cmd(ProtocolFrame_t *frame);
 // 全局解析上下文
 ParserCtx_t g_parser_ctx;
 // 发送序列号缓存
- uint8_t g_tx_seq = 0;
+uint8_t g_tx_seq = 0;
 
 // 内容ID映射表
 const IdHandlerMap_t handler_map[] = {
-    {0x01, handle_light_cmd},     // 灯光警报业务
-    {0x02, handle_bms_cmd},       // 电池读取业务
-    {0x03, handle_system_cmd},    // 系统相关业务
-    {0x04, handle_time_cmd},      // 时间相关业务
-    {0x05, handle_heartbeat_cmd}, // 心跳包业务
-    {0x00, NULL}                  // 结束标记
+    {CMD_ID_LIGHT, handle_light_cmd},               // 灯光控制命令
+    {CMD_ID_BMS, handle_bms_cmd},                   // 电池管理系统命令
+    {CMD_ID_HEARTBEAT_EN, handle_heartbeat_en_cmd}, // 是否使能心跳命令
+    {CMD_ID_HEARTBEAT, handle_heartbeat_cmd},       // 工作心跳命令
+    {CMD_ID_WORK_MODE, handle_work_mode_cmd},       // 工作模式命令
+    {CMD_ID_SLEEP_EN, handle_sleep_en_cmd},         // 是否使能休眠命令
+    {CMD_ID_SLEEP_TIME, handle_sleep_time_cmd},     // 休眠时间命令
+    {CMD_ID_CURRENT_TIME, handle_time_cmd},         // 同步当前时间命令
+    {CMD_ID_SYS_ERROR, handle_sys_error_cmd},       // 系统错误上报命令
+    {0x00, NULL}                                    // 结束标记
 };
 
 // CRC16-CCITT (poly 0x1021) initial 0x0000
@@ -42,29 +50,20 @@ static uint16_t crc16_ccitt(const uint8_t *buf, uint32_t len)
 }
 
 // 统一打包并发送响应帧
-// is_query: 1代表这是问询应答(上报Topic2)，0代表控制应答(通知Topic1)
-// payload_len：实际业务数据长度，不包含4G前缀和协议头
-static void app_4G_send_ack(uint8_t ack_id, uint8_t *payload, uint8_t payload_len, uint8_t is_query)
+static void app_4G_send_ack(uint8_t ack_id, uint8_t *payload, uint8_t payload_len)
 {
-     uint8_t tx_buf[300];
+    uint8_t tx_buf[300];
     uint16_t tx_idx = 0;
 
-    // 1. 组装4G分发前缀
-    if (is_query)
-    {
-        tx_buf[tx_idx++] = '2'; // 问询帧上报Topic2：/ai_safety/ais001/info/upload/hook/device_manager
-    }
-    else
-    {
-        tx_buf[tx_idx++] = '1'; // 数据帧通知Topic1：/ai_safety/ais001/control/inform/hook/device_manager
-    }
+    // 前缀统一为通知/应答主题
+    tx_buf[tx_idx++] = '3';
     tx_buf[tx_idx++] = ',';
 
     uint16_t frame_start_idx = tx_idx;
-    tx_buf[tx_idx++] = FRAME_HEADER_MAGIC; // 帧头
-    tx_buf[tx_idx++] = ack_id;             // 内容ID
-    tx_buf[tx_idx++] = g_tx_seq++;         // 包序号循环递增
-    tx_buf[tx_idx++] = payload_len;        // 数据长度
+    tx_buf[tx_idx++] = FRAME_HEADER_MAGIC; // SOF
+    tx_buf[tx_idx++] = g_tx_seq++;         // SEQ
+    tx_buf[tx_idx++] = ack_id;             // CMD_ID
+    tx_buf[tx_idx++] = payload_len;        // DATA-LEN
 
     if (payload_len > 0 && payload != NULL)
     {
@@ -72,10 +71,10 @@ static void app_4G_send_ack(uint8_t ack_id, uint8_t *payload, uint8_t payload_le
         tx_idx += payload_len;
     }
 
-    // CRC
+    // CRC 小端序：低字节在前，高字节在后
     uint16_t crc_calc = crc16_ccitt(&tx_buf[frame_start_idx], tx_idx - frame_start_idx);
-    tx_buf[tx_idx++] = (uint8_t)(crc_calc >> 8);
     tx_buf[tx_idx++] = (uint8_t)(crc_calc & 0xFF);
+    tx_buf[tx_idx++] = (uint8_t)((crc_calc >> 8) & 0xFF);
 
     uart_manage_dma_send_by_name("4g", tx_buf, tx_idx);
 }
@@ -87,167 +86,192 @@ static void app_4G_send_ack(uint8_t ack_id, uint8_t *payload, uint8_t payload_le
 // 内容ID: 0x01 灯光警报业务
 static void handle_light_cmd(ProtocolFrame_t *frame)
 {
-    uint8_t is_query;
     if (frame->data_len == 0)
-    {
-        is_query = 1; // 长度为0，问询帧
+    { // 读指令
+        uint8_t status_byte = 0;
+        if (MB_Reg_Get(STATUS_LED_SWITCH))
+        {
+            status_byte |= (1 << 0);
+        }
+        if (MB_Reg_Get(STATUS_BUZZER) == 1)
+        {
+            status_byte |= (1 << 1);
+        }
+        else if (MB_Reg_Get(STATUS_BUZZER) == 2)
+        {
+            status_byte |= (1 << 2);
+        }
+        uint8_t vol = MB_Reg_Get(CMD_VOLUME) & 0x1F;
+        status_byte |= (vol << 3);
+
+        app_4G_send_ack(CMD_ID_LIGHT, &status_byte, 1);
     }
     else
-    {
-        is_query = 0; // 长度不为0，控制帧
-    }
-
-    // 如果是控制指令，解析并下发
-    if (!is_query && frame->data_len >= 1)
-    {
+    { // 写指令
         uint8_t cmd_byte = frame->data[0];
-        // Bit 0: 爆闪灯 (1开0关)
         MB_Reg_Set(CMD_LED_SWITCH, (cmd_byte & 0x01) ? 1 : 0);
-        // Bit 1: 7m警报响 (1开0关)
         MB_Reg_Set(CMD_BUZZER_7M, (cmd_byte & 0x02) ? 1 : 0);
-        // Bit 2: 3m警报响 (1开0关)
         MB_Reg_Set(CMD_BUZZER_3M, (cmd_byte & 0x04) ? 1 : 0);
-        // Bit 3-7: 音量
         MB_Reg_Set(CMD_VOLUME, (cmd_byte >> 3) & 0x1F);
-    }
 
-    uint8_t status_byte = 0;
-    if (MB_Reg_Get(STATUS_LED_SWITCH))
-    {
-        status_byte |= (1 << 0);
+        app_4G_send_ack(CMD_ID_LIGHT, NULL, 0); // 写操作返回空数据段
     }
-    if (MB_Reg_Get(STATUS_BUZZER))
-    {
-        status_byte |= (1 << 1);
-    }
-
-    uint8_t vol = MB_Reg_Get(CMD_VOLUME) & 0x1F;
-    status_byte |= (vol << 3);
-
-    app_4G_send_ack(ACK_ID_LIGHT_CONTROL, &status_byte, 1, is_query);
 }
-
-// 内容ID: 0x02 电池上报问询（BMS仅有一问一答的问询指令）
+// 0x02 电池读取
 static void handle_bms_cmd(ProtocolFrame_t *frame)
 {
-    uint8_t is_query = 1; // bms仅有问询帧
-    uint8_t payload[10] = {0};
-
-    uint16_t battery = MB_Reg_Get(STATUS_BMS_BATTERY);
-    uint16_t voltage = MB_Reg_Get(STATUS_BMS_TOTAL_VOLTAGE);
-    uint16_t current = MB_Reg_Get(STATUS_BMS_TOTAL_CURRENT);
-    uint16_t dis_time = MB_Reg_Get(STATUS_BMS_REMAIN_DISCHARGE_TIME);
-    uint16_t chg_time = MB_Reg_Get(STATUS_BMS_REMAIN_CHARGE_TIME);
-
-    // 采用大端序组装
-    payload[0] = (battery >> 8) & 0xFF;
-    payload[1] = battery & 0xFF;
-
-    payload[2] = (voltage >> 8) & 0xFF;
-    payload[3] = voltage & 0xFF;
-
-    payload[4] = (current >> 8) & 0xFF;
-    payload[5] = current & 0xFF;
-
-    payload[6] = (dis_time >> 8) & 0xFF;
-    payload[7] = dis_time & 0xFF;
-
-    payload[8] = (chg_time >> 8) & 0xFF;
-    payload[9] = chg_time & 0xFF;
-
-    app_4G_send_ack(ACK_ID_BMS_QUERY, payload, 10, is_query); // 发送应答, 10字节长度
-}
-
-// 内容ID: 0x03 系统相关：待机位/工作模式/错误码
-static void handle_system_cmd(ProtocolFrame_t *frame)
-{
-    uint8_t is_query;
     if (frame->data_len == 0)
-    {
-        is_query = 1; // 长度为0，问询帧
+    { // 读指令
+        uint8_t payload[10] = {0};
+        uint16_t battery = MB_Reg_Get(STATUS_BMS_BATTERY);
+        uint16_t voltage = MB_Reg_Get(STATUS_BMS_TOTAL_VOLTAGE);
+        uint16_t current = MB_Reg_Get(STATUS_BMS_TOTAL_CURRENT);
+        uint16_t dis_time = MB_Reg_Get(STATUS_BMS_REMAIN_DISCHARGE_TIME);
+        uint16_t chg_time = MB_Reg_Get(STATUS_BMS_REMAIN_CHARGE_TIME);
+
+        // 小端序组装
+        payload[0] = battery & 0xFF;
+        payload[1] = (battery >> 8) & 0xFF;
+        payload[2] = voltage & 0xFF;
+        payload[3] = (voltage >> 8) & 0xFF;
+        payload[4] = current & 0xFF;
+        payload[5] = (current >> 8) & 0xFF;
+        payload[6] = dis_time & 0xFF;
+        payload[7] = (dis_time >> 8) & 0xFF;
+        payload[8] = chg_time & 0xFF;
+        payload[9] = (chg_time >> 8) & 0xFF;
+
+        app_4G_send_ack(CMD_ID_BMS, payload, 10);
     }
     else
-    {
-        is_query = 0; // 长度不为0，控制帧
+    { // 应对异常写指令兜底
+        app_4G_send_ack(CMD_ID_BMS, NULL, 0);
     }
+}
 
-    if (!is_query && frame->data_len >= 3)
+// 0x04 工作心跳使能
+static void handle_heartbeat_en_cmd(ProtocolFrame_t *frame)
+{
+    if (frame->data_len == 0) // 读指令
     {
+        uint8_t heartbeat_en = MB_Reg_Get(SOFT_STANDBY_ENABLE) & 0xFF;
+        app_4G_send_ack(CMD_ID_HEARTBEAT_EN, &heartbeat_en, 1);
+    }
+    else
+    { // 写指令
         MB_Reg_Set(SOFT_STANDBY_ENABLE, frame->data[0]);
-        MB_Reg_Set(STATUS_WORK_MODE, frame->data[1]);
+        app_4G_send_ack(CMD_ID_HEARTBEAT_EN, NULL, 0);
     }
-
-    uint8_t payload[3];
-    payload[0] = MB_Reg_Get(SOFT_STANDBY_ENABLE) & 0xFF;
-    payload[1] = MB_Reg_Get(STATUS_WORK_MODE) & 0xFF;
-    payload[2] = MB_Reg_Get(REG_ERROR_CODE) & 0xFF; // 取低8位做简易错误码
-
-    app_4G_send_ack(ACK_ID_SYSTEM_STATUS, payload, 3, is_query);
 }
-
-// 内容ID: 0x04 时间相关：关机/开机/stm32rtc
-static void handle_time_cmd(ProtocolFrame_t *frame)
-{
-    uint8_t is_query;
-    if (frame->data_len == 0)
-    {
-        is_query = 1; // 长度为0，问询帧
-    }
-    else
-    {
-        is_query = 0; // 长度不为0，控制帧
-    }
-
-    if (!is_query && frame->data_len >= 6)
-    {
-        // 大端序
-        uint16_t off_time = (frame->data[0] << 8) | frame->data[1];
-        uint16_t on_time = (frame->data[2] << 8) | frame->data[3];
-
-        MB_Reg_Set(STATUS_POWER_OFF_TIME, off_time);
-        MB_Reg_Set(STATUS_POWER_ON_TIME, on_time);
-    }
-
-    uint8_t payload[6];
-    uint16_t off_time = MB_Reg_Get(STATUS_POWER_OFF_TIME);
-    uint16_t on_time = MB_Reg_Get(STATUS_POWER_ON_TIME);
-    uint16_t rtc_time = MB_Reg_Get(RTC_TIME);
-
-    // 上报
-    payload[0] = (off_time >> 8) & 0xFF;
-    payload[1] = off_time & 0xFF;
-
-    payload[2] = (on_time >> 8) & 0xFF;
-    payload[3] = on_time & 0xFF;
-
-    payload[4] = (rtc_time >> 8) & 0xFF;
-    payload[5] = rtc_time & 0xFF;
-
-    app_4G_send_ack(ACK_ID_TIME_SCHEDULE, payload, 6, is_query);
-}
-
-// 内容ID: 0x05 心跳包
+// 0x05 工作心跳
 static void handle_heartbeat_cmd(ProtocolFrame_t *frame)
 {
-    if (frame->data_len >= 1)
-    {
+    if (frame->data_len == 0)
+    { // 读指令
+        uint8_t hb = MB_Reg_Get(STATUS_HEART_BEAT) & 0xFF;
+        app_4G_send_ack(CMD_ID_HEARTBEAT, &hb, 1);
+    }
+    else
+    { // 写指令，不做应答
         MB_Reg_Set(STATUS_HEART_BEAT, frame->data[0]);
     }
-
-    uint8_t payload[1];
-    payload[0] = MB_Reg_Get(STATUS_HEART_BEAT) & 0xFF;
-
-    app_4G_send_ack(ACK_ID_HEARTBEAT, payload, 1, 0); // 心跳无问询，属于应答
+}
+// 0x06 工作模式
+static void handle_work_mode_cmd(ProtocolFrame_t *frame)
+{
+    if (frame->data_len == 0) // 读指令
+    {
+        uint8_t mode = MB_Reg_Get(STATUS_WORK_MODE) & 0xFF;
+        app_4G_send_ack(CMD_ID_WORK_MODE, &mode, 1);
+    }
+    else // 写指令，工作模式为只读，返回错误码
+    {
+        uint8_t err = ERR_CODE_LEN_ERROR;
+        app_4G_send_ack(CMD_ID_WORK_MODE | 0x80, &err, 1);
+    }
 }
 
+// 0x07 是否使能睡眠
+static void handle_sleep_en_cmd(ProtocolFrame_t *frame)
+{
+    if (frame->data_len == 0)
+    {
+        uint8_t st = MB_Reg_Get(SOFT_STANDBY_ENABLE) & 0xFF;
+        app_4G_send_ack(CMD_ID_SLEEP_EN, &st, 1);
+    }
+    else
+    {
+        MB_Reg_Set(SOFT_STANDBY_ENABLE, frame->data[0]);
+        app_4G_send_ack(CMD_ID_SLEEP_EN, NULL, 0);
+    }
+}
+
+// 0x08 睡眠时间
+static void handle_sleep_time_cmd(ProtocolFrame_t *frame)
+{
+    if (frame->data_len == 0)
+    {
+        uint8_t payload[4];
+        uint16_t on_time = MB_Reg_Get(STATUS_POWER_ON_TIME);
+        uint16_t off_time = MB_Reg_Get(STATUS_POWER_OFF_TIME);
+
+        // 小端序
+        payload[0] = on_time & 0xFF;
+        payload[1] = (on_time >> 8) & 0xFF;
+        payload[2] = off_time & 0xFF;
+        payload[3] = (off_time >> 8) & 0xFF;
+
+        app_4G_send_ack(CMD_ID_SLEEP_TIME, payload, 4);
+    }
+    else if (frame->data_len >= 4)
+    {
+        // 小端序解析写入
+        uint16_t on_time = frame->data[0] | (frame->data[1] << 8);
+        uint16_t off_time = frame->data[2] | (frame->data[3] << 8);
+        MB_Reg_Set(STATUS_POWER_ON_TIME, on_time);
+        MB_Reg_Set(STATUS_POWER_OFF_TIME, off_time);
+
+        app_4G_send_ack(CMD_ID_SLEEP_TIME, NULL, 0);
+    }
+}
+
+// 0x09 当前时间
+static void handle_time_cmd(ProtocolFrame_t *frame)
+{
+    if (frame->data_len == 0)
+    {
+        uint8_t payload[2];
+        uint16_t rtc_time = MB_Reg_Get(RTC_TIME);
+
+        payload[0] = rtc_time & 0xFF;
+        payload[1] = (rtc_time >> 8) & 0xFF;
+
+        app_4G_send_ack(CMD_ID_CURRENT_TIME, payload, 2);
+    }
+    else if (frame->data_len >= 2)
+    {
+        uint16_t rtc_time = frame->data[0] | (frame->data[1] << 8);
+        MB_Reg_Set(RTC_TIME, rtc_time);
+        app_4G_send_ack(CMD_ID_CURRENT_TIME, NULL, 0);
+    }
+}
+// 0xF0 系统错误码上报
+static void handle_sys_error_cmd(ProtocolFrame_t *frame)
+{
+    if (frame->data_len == 0)
+    {
+        uint8_t err = MB_Reg_Get(REG_ERROR_CODE) & 0xFF;
+        app_4G_send_ack(CMD_ID_SYS_ERROR, &err, 1);
+    }
+}
 // 帧解析完成后的分发函数
 static void Parser_FrameComplete(ParserCtx_t *ctx)
 {
-     ProtocolFrame_t frame;
+    ProtocolFrame_t frame;
 
     frame.header = ctx->header_buf[0];
-    frame.content_id = ctx->header_buf[1];
-    frame.seq = ctx->header_buf[2];
+    frame.seq = ctx->header_buf[1];
+    frame.content_id = ctx->header_buf[2];
     frame.data_len = ctx->header_buf[3];
     if (frame.data_len > 0)
     {
@@ -264,6 +288,8 @@ static void Parser_FrameComplete(ParserCtx_t *ctx)
         }
     }
     LOGE("Unknown Content ID: 0x%02X\n", frame.content_id);
+    uint8_t err_code = ERR_CODE_UNKNOWN_ID;
+    app_4G_send_ack(frame.content_id | 0x80, &err_code, 1);
 }
 
 // 逐字节解析状态机入口
@@ -282,7 +308,7 @@ void parser_process_byte(ParserCtx_t *ctx, uint8_t byte)
 
     case STATE_READ_HEADER:
         ctx->header_buf[ctx->header_cnt++] = byte;
-        // 解析帧头: Head(1) + ID(1) + Seq(1) + Len(1)
+        // 解析帧头: (Header + SEQ + ID + Len)
         if (ctx->header_cnt == 4)
         {
             ctx->data_len = ctx->header_buf[3];
@@ -314,12 +340,12 @@ void parser_process_byte(ParserCtx_t *ctx, uint8_t byte)
         ctx->crc_buf[ctx->crc_cnt++] = byte;
         if (ctx->crc_cnt == 2)
         {
-            // 读取完整包，执行CRC计算比对
+            // 读取完整包，小端序执行CRC计算比对
             // 计算范围: 帧头字节 + 内容ID + 包序号 + 数据长度 + 数据
-            uint16_t rcv_crc = (ctx->crc_buf[0] << 8) | ctx->crc_buf[1];
+            uint16_t rcv_crc = (ctx->crc_buf[0] | (ctx->crc_buf[1] << 8));
 
             // 拼接出待算CRC的完整Buffer
-             uint8_t calc_buf[260];
+            uint8_t calc_buf[260];
             memcpy(calc_buf, ctx->header_buf, 4);
             if (ctx->data_len > 0)
             {
@@ -343,7 +369,11 @@ void parser_process_byte(ParserCtx_t *ctx, uint8_t byte)
             }
             else
             {
-                LOGE("4G Frame CRC Error: calc=0x%04X, rcv=0x%04X\n", calc_crc, rcv_crc);
+                printf("4G Frame CRC Error: calc=0x%04X, rcv=0x%04X\n", calc_crc, rcv_crc);
+                // CRC 校验失败
+                uint8_t req_id = ctx->header_buf[2]; // 内容ID
+                uint8_t err_code = ERR_CODE_CRC_FAIL;
+                app_4G_send_ack(req_id | 0x80, &err_code, 1);
             }
 
             // 重置状态机，等待下一帧

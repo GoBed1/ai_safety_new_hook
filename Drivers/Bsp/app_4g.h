@@ -4,6 +4,16 @@
 #include <stdint.h>
 #include "system_def.h"
 
+#define CMD_ID_LIGHT            0x01  // 声光报警控制
+#define CMD_ID_BMS              0x02  // 电池信息
+#define CMD_ID_HEARTBEAT_EN     0x04  // 是否使能工作心跳
+#define CMD_ID_HEARTBEAT        0x05  // 工作心跳
+#define CMD_ID_WORK_MODE        0x06  // 工作模式
+#define CMD_ID_SLEEP_EN         0x07  // 是否使能睡眠模式
+#define CMD_ID_SLEEP_TIME       0x08  // 睡眠时间
+#define CMD_ID_CURRENT_TIME     0x09  // 当前时间
+#define CMD_ID_SYS_ERROR        0xF0  // 系统错误码
+
 #define ACK_ID_LIGHT_CONTROL      0x81  // 灯光警报业务应答/上报
 #define ACK_ID_BMS_QUERY          0x82  // BMS 电池问询上报
 #define ACK_ID_SYSTEM_STATUS      0x83  // 系统相关状态应答/上报
@@ -11,6 +21,11 @@
 #define ACK_ID_HEARTBEAT          0x85  // 继电器心跳应答
 // 协议帧头
 #define FRAME_HEADER_MAGIC 0xA5
+
+// 错误码定义 (用于错误帧的 Data 段)
+#define ERR_CODE_CRC_FAIL       0x01  // CRC校验失败
+#define ERR_CODE_LEN_ERROR      0x02  // 帧长度不够/异常
+#define ERR_CODE_UNKNOWN_ID     0x03  // 未知的指令ID
 
 // 状态机枚举
 typedef enum {
