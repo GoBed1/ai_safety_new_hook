@@ -11,7 +11,7 @@ static void handle_heartbeat_cmd(ProtocolFrame_t *frame);
 // 全局解析上下文
 ParserCtx_t g_parser_ctx;
 // 发送序列号缓存
-static uint8_t g_tx_seq = 0;
+ uint8_t g_tx_seq = 0;
 
 // 内容ID映射表
 const IdHandlerMap_t handler_map[] = {
@@ -46,7 +46,7 @@ static uint16_t crc16_ccitt(const uint8_t *buf, uint32_t len)
 // payload_len：实际业务数据长度，不包含4G前缀和协议头
 static void app_4G_send_ack(uint8_t ack_id, uint8_t *payload, uint8_t payload_len, uint8_t is_query)
 {
-    static uint8_t tx_buf[300];
+     uint8_t tx_buf[300];
     uint16_t tx_idx = 0;
 
     // 1. 组装4G分发前缀
@@ -243,7 +243,7 @@ static void handle_heartbeat_cmd(ProtocolFrame_t *frame)
 // 帧解析完成后的分发函数
 static void Parser_FrameComplete(ParserCtx_t *ctx)
 {
-    static ProtocolFrame_t frame;
+     ProtocolFrame_t frame;
 
     frame.header = ctx->header_buf[0];
     frame.content_id = ctx->header_buf[1];
@@ -319,7 +319,7 @@ void parser_process_byte(ParserCtx_t *ctx, uint8_t byte)
             uint16_t rcv_crc = (ctx->crc_buf[0] << 8) | ctx->crc_buf[1];
 
             // 拼接出待算CRC的完整Buffer
-            static uint8_t calc_buf[260];
+             uint8_t calc_buf[260];
             memcpy(calc_buf, ctx->header_buf, 4);
             if (ctx->data_len > 0)
             {

@@ -86,8 +86,8 @@ extern "C"
 /* 1. 基础状态与日志定义                                                     */
 /* ========================================================================= */
 #define LOGD(...)                                      //printf("[DEBUG] " __VA_ARGS__)
-#define LOGI(...)                                      printf("[INFO]  " __VA_ARGS__)
-#define LOGE(...)                                      printf("[ERROR] " __VA_ARGS__)
+#define LOGI(...)                                     // printf("[INFO]  " __VA_ARGS__)
+#define LOGE(...)                                     // printf("[ERROR] " __VA_ARGS__)
 
 /* ========================================================================= */
 /* 2. 系统调度、看门狗与阈值配置 (System & Thresholds)                               */

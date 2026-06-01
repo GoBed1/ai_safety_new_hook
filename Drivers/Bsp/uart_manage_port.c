@@ -67,7 +67,13 @@ extern ParserCtx_t g_parser_ctx; // 4G数据解析上下文
 extern void parser_process_byte(ParserCtx_t *ctx, uint8_t byte); // 4G数据逐字节解析函数
 static uint32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
 {
-  printf("\r\n[DEBUG] 4G  recv %d : %.*s\r\n", len, len, buf);
+  (void)uart_manage_dma_send_by_name("shell", buf, len);
+  printf("\r\n[DEBUG] 4G recv hex %d bytes: ", len);
+    for (uint16_t i = 0; i < len; i++) {
+        printf("%02X ", buf[i]); // 每个字节占2位，高位补0，后面带空格区分
+    }
+    printf("\r\n"); // 打印完换行
+  // printf("\r\n[DEBUG] 4G  recv %d : %.*s\r\n", len, len, buf);
  for (uint16_t i = 0; i < len; i++) {
         parser_process_byte(&g_parser_ctx, buf[i]);
     }
