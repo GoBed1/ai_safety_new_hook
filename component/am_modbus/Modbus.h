@@ -8,7 +8,7 @@
 #ifndef THIRD_PARTY_MODBUS_INC_MODBUS_H_
 #define THIRD_PARTY_MODBUS_INC_MODBUS_H_
 
-#include "ModbusConfig.h"
+#include "am_modbus_port.h"
 #include <inttypes.h>
 #include <stdbool.h>
 #include "FreeRTOS.h"

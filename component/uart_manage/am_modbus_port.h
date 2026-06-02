@@ -1,11 +1,11 @@
 /*
- * ModbusConfig.h
+ * am_modbus_port.h
  *
  *  Created on: Apr 28, 2021
  *      Author: Alejandro Mera
  *
  *  This is a template for the Modbus library configuration.
- *  Every project needs a tailored copy of this file renamed to ModbusConfig.h, and added to the include path.
+ *  Every project needs a tailored copy of this file renamed to am_modbus_port.h, and added to the include path.
  */
 
 #ifndef THIRD_PARTY_MODBUS_LIB_CONFIG_MODBUSCONFIG_H_
