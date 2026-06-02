@@ -1,3 +1,4 @@
+#define MODULE_LOG_ENABLE LOG_SWITCH_RELAY
 #include "app_relay.h"
 #include "modbus_rtu_server_interface.h"
 #include "FreeRTOS.h"

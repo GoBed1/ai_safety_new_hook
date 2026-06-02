@@ -1,3 +1,4 @@
+#define MODULE_LOG_ENABLE LOG_SWITCH_4G
 #include "app_4g.h"
 #include "uart_manage.h"
 #include "modbus_rtu_server_interface.h"

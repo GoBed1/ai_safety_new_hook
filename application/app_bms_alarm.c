@@ -1,3 +1,4 @@
+#define MODULE_LOG_ENABLE LOG_SWITCH_ALARM
 #include "app_bms_alarm.h"
 #include "modbus_rtu_server_interface.h"
 #include "FreeRTOS.h"

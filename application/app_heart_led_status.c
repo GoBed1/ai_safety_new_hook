@@ -1,3 +1,4 @@
+#define MODULE_LOG_ENABLE LOG_SWITCH_HEARTLED_STATUS
 #include "app_heart_led_status.h"
 #include "cmsis_os.h"
 #include "modbus_rtu_server_interface.h"

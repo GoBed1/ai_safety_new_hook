@@ -83,11 +83,59 @@ extern "C"
     while(1);          \
   }
 /* ========================================================================= */
-/* 1. 基础状态与日志定义                                                     */
+/* 1. 定义日志的级别 (数字越大，级别越高，越严重)                            */
 /* ========================================================================= */
-#define LOGD(...)                                      //printf("[DEBUG] " __VA_ARGS__)
-#define LOGI(...)                                     // printf("[INFO]  " __VA_ARGS__)
-#define LOGE(...)                                     // printf("[ERROR] " __VA_ARGS__)
+#define LOG_LEVEL_DEBUG  1   // 调试
+#define LOG_LEVEL_INFO   2   // 通知
+#define LOG_LEVEL_ERROR  3   // 错误
+#define LOG_LEVEL_NONE   4   // 不打印
+
+#define GLOBAL_LOG_LEVEL LOG_LEVEL_DEBUG //当前日志等级
+
+// 各模块的独立开关 (1: 开启该模块日志, 0: 完全关闭该模块日志)
+#define LOG_SWITCH_ALARM               0   // ALARM模块日志
+#define LOG_SWITCH_GPS                 1   // GPS模块日志
+#define LOG_SWITCH_RELAY               1   // RELAY模块日志
+#define LOG_SWITCH_HEARTLED_STATUS     1   // HEARTLED_STATUS模块日志
+#define LOG_SWITCH_4G                  1   // 4G模块日志
+#define LOG_SWITCH_CAR_TASK            1   // CAR_TASK模块日志
+
+/* ========================================================================= */
+/* 日志宏动态生成逻辑 (带纯文件名与行号)                                     */
+/* ========================================================================= */
+
+//提取纯文件名，自动切除可能存在的长路径 (如 C:\xxx\src\)
+#define __FILENAME__ (strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__))
+
+#if defined(MODULE_LOG_ENABLE) && (MODULE_LOG_ENABLE == 1)
+
+    // 第二重过滤：DEBUG 级别
+    #if GLOBAL_LOG_LEVEL <= LOG_LEVEL_DEBUG
+        #define LOGD(format, ...) printf("[DEBUG] [%s:%d] " format, __FILENAME__, __LINE__, ##__VA_ARGS__)
+    #else
+        #define LOGD(format, ...) do {} while(0)
+    #endif
+
+    // 第二重过滤：INFO 级别
+    #if GLOBAL_LOG_LEVEL <= LOG_LEVEL_INFO
+        #define LOGI(format, ...) printf("[INFO]  [%s:%d] " format, __FILENAME__, __LINE__, ##__VA_ARGS__)
+    #else
+        #define LOGI(format, ...) do {} while(0)
+    #endif
+
+    // 第二重过滤：ERROR 级别 
+    #if GLOBAL_LOG_LEVEL <= LOG_LEVEL_ERROR
+        #define LOGE(format, ...) printf("[ERROR] [%s:%d] " format, __FILENAME__, __LINE__, ##__VA_ARGS__)
+    #else
+        #define LOGE(format, ...) do {} while(0)
+    #endif
+
+#else
+    // 模块被关闭时，静默处理
+    #define LOGD(format, ...) do {} while(0)
+    #define LOGI(format, ...) do {} while(0)
+    #define LOGE(format, ...) do {} while(0)
+#endif
 
 /* ========================================================================= */
 /* 2. 系统调度、看门狗与阈值配置 (System & Thresholds)                               */

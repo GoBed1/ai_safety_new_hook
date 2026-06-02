@@ -1,9 +1,10 @@
+#define MODULE_LOG_ENABLE LOG_SWITCH_CAR_TASK
 #include "app_hook_task.h"
 #include "modbus_rtu_server_interface.h"
 #include "app_relay.h"
 #include "app_bms_alarm.h"
 #include "app_heart_led_status.h"
-
+#include "gps_app.h"
 // ====== 看门狗标志位======
 volatile uint8_t g_task_alive_flags = 0;
 extern UART_HandleTypeDef huart7;
