@@ -63,6 +63,8 @@ void Error_Handler(void);
 #define POWER_5V_GPIO_Port GPIOC
 #define LED2_Pin GPIO_PIN_10
 #define LED2_GPIO_Port GPIOE
+#define GPS_EN_Pin GPIO_PIN_14
+#define GPS_EN_GPIO_Port GPIOB
 #define HEART_LED_Pin GPIO_PIN_10
 #define HEART_LED_GPIO_Port GPIOD
 #define RESET_4G_Pin GPIO_PIN_14
@@ -71,8 +73,6 @@ void Error_Handler(void);
 #define RELOAD_4G_GPIO_Port GPIOD
 #define POWER_4G_3V3_Pin GPIO_PIN_15
 #define POWER_4G_3V3_GPIO_Port GPIOA
-#define GPS_EN_Pin GPIO_PIN_3
-#define GPS_EN_GPIO_Port GPIOD
 
 /* USER CODE BEGIN Private defines */
 

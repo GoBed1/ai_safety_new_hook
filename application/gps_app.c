@@ -1,3 +1,4 @@
+#define MODULE_LOG_ENABLE LOG_SWITCH_GPS
 #include "gps_app.h"
 #include "nmea.h"
 #include "modbus_rtu_server_interface.h"
