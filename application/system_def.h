@@ -141,7 +141,8 @@ extern "C"
 /* 2. 系统调度、看门狗与阈值配置 (System & Thresholds)                               */
 /* ========================================================================= */
 #define TIMEZONE_OFFSET_BEIJING                        8       // 北京时间偏移量 (UTC+8)
-#define HEARTBEAT_TIMEOUT_MS                           60000   // 继电器心跳超时时间(60s)
+#define HEARTBEAT_SILENCE_MS                           5000    // 继电器心跳超时静默时间(5s)
+#define HEARTBEAT_TIMEOUT_MS                           60000   // 继电器心跳超时断电时间(60s)
 #define MODBUS_WAIT_TIMEOUT_MS                         1000    // Modbus等待超时时间
                            
 #define LOW_BATTERY_THRESHOLD                          2000    // 低电量警告阈值 (BMS电量低于此值报警)
@@ -152,6 +153,9 @@ extern "C"
 #define REGS_TOTAL_NUM                                 256     // 内部Modbus寄存器总数
 #define FORWARD_SLAVE_ADDR                             1       // stm32本机作为 Slave 的地址 
 #define REG_ERROR_CODE                                 113     // 系统错误码
+#define HEARTBEAT_ENABLE                               117     // 继电器心跳使能
+
+
  // -看门狗打卡标志位======
 #define TASK_AI_SAFY_ALIVE    (1 << 0)
 #define TASK_GPS_ALIVE        (1 << 1)

@@ -155,12 +155,12 @@ static void handle_heartbeat_en_cmd(ProtocolFrame_t *frame)
 {
     if (frame->data_len == 0) // 读指令
     {
-        uint8_t heartbeat_en = MB_Reg_Get(SOFT_STANDBY_ENABLE) & 0xFF;
+        uint8_t heartbeat_en = MB_Reg_Get(HEARTBEAT_ENABLE) & 0xFF;
         app_4G_send_ack(CMD_ID_HEARTBEAT_EN, &heartbeat_en, 1);
     }
     else
     { // 写指令
-        MB_Reg_Set(SOFT_STANDBY_ENABLE, frame->data[0]);
+        MB_Reg_Set(HEARTBEAT_ENABLE, frame->data[0]);
         app_4G_send_ack(CMD_ID_HEARTBEAT_EN, NULL, 0);
     }
 }

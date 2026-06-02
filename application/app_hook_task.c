@@ -155,7 +155,8 @@ void init_app_hook_task() {
     MB_Reg_Set(CMD_VOLUME, DEFAULT_VOLUME); 
     //初始化错误码寄存器为0x0000
     MB_Reg_Set(REG_ERROR_CODE, 0x0000); 
-
+    // 初始化心跳使能寄存器为1（默认开启心跳）
+    MB_Reg_Set(HEARTBEAT_ENABLE, 1);
     ai_safy_master_handle = osThreadNew(ai_safy_master_thread, NULL, &ai_safy_master_attributes);
     relay_heartbeat_handle = osThreadNew(relay_heartbeat_thread, NULL, &relay_heartbeat_attributes);
     gps_standby_handle = osThreadNew(gps_standby_thread, NULL, &gps_standby_attributes);
