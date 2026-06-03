@@ -7,7 +7,7 @@
 #include "gps_app.h"
 // ====== 看门狗标志位======
 volatile uint8_t g_task_alive_flags = 0;
-extern UART_HandleTypeDef huart7;
+extern UART_HandleTypeDef huart8;
 static modbusHandler_t modbus_rtu_server;
 
 osThreadId_t ai_safy_slave_handle;
@@ -62,12 +62,12 @@ void EventGroupCreate_Init(void) {
 // 供外部访问本机状态的 Modbus 从机初始化
 void init_ai_safy_slave(void) {
     static modbusHandler_t modbus_rtu_server;
-    extern UART_HandleTypeDef huart7;
+    extern UART_HandleTypeDef huart8;
     
 
     modbus_rtu_server.uModbusType = MB_SLAVE;
     modbus_rtu_server.u8id = FORWARD_SLAVE_ADDR; 
-    modbus_rtu_server.port = &huart7;
+    modbus_rtu_server.port = &huart8;
     modbus_rtu_server.EN_Port = NULL; 
     modbus_rtu_server.EN_Pin = 0;
     
@@ -114,7 +114,6 @@ void gps_standby_thread(void *argument)
     for (;;)
     {
         g_task_alive_flags |= TASK_GPS_ALIVE;
-        
         process_gps_logic();  
 
         osDelay(1000); 
@@ -126,6 +125,7 @@ void sys_supervisor_thread(void *argument)
    for (;;)
     {
         sys_supervisor_process();
+
         osDelay(100); 
     }
 }
@@ -143,7 +143,7 @@ void init_app_hook_task() {
     
     EventGroupCreate_Init();
     //启动本机的 Modbus 通信服务
-    init_modbus_slave(&modbus_rtu_server, &huart7, FORWARD_SLAVE_ADDR);  
+    init_modbus_slave(&modbus_rtu_server, &huart8, FORWARD_SLAVE_ADDR);  
     //初始化串口管理模块
     init_uart_manage();
     //声光警报和bms,主机初始化

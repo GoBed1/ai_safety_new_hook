@@ -232,6 +232,7 @@ extern "C"
 #define REG_REMAIN_DISCHARGE                           0x0007  // 获取：剩余放电时间
 #define REG_REMAIN_CHARGE                              0x0008  // 获取：剩余充电时间
 #define REG_IS_CHARGING                                0x000B  // 获取：是否充电中
+#define REG_PROTECT_STATUS                             0x0062  // 获取：保护状态
 
 // --- 本机内部 Modbus 状态上报寄存器映射 ---
 #define STATUS_BMS_BATTERY                             102     // [上报] BMS当前电量
@@ -240,7 +241,7 @@ extern "C"
 #define STATUS_BMS_REMAIN_CHARGE_TIME                  108     // [上报] BMS剩余充电时间 
 #define STATUS_BMS_TOTAL_VOLTAGE                       109     // [上报] BMS总电压
 #define STATUS_BMS_TOTAL_CURRENT                       110     // [上报] BMS总电流
-
+#define STATUS_BMS_PROTECT_STATUS                      118     // [上报] BMS保护状态
 /* ========================================================================= */
 /* 6. 其他系统逻辑与状态寄存器                                             */
 /* ========================================================================= */

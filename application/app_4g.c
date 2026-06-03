@@ -123,12 +123,13 @@ static void handle_bms_cmd(ProtocolFrame_t *frame)
 {
     if (frame->data_len == 0)
     { // 读指令
-        uint8_t payload[10] = {0};
+        uint8_t payload[12] = {0};
         uint16_t battery = MB_Reg_Get(STATUS_BMS_BATTERY);
         uint16_t voltage = MB_Reg_Get(STATUS_BMS_TOTAL_VOLTAGE);
         uint16_t current = MB_Reg_Get(STATUS_BMS_TOTAL_CURRENT);
         uint16_t dis_time = MB_Reg_Get(STATUS_BMS_REMAIN_DISCHARGE_TIME);
         uint16_t chg_time = MB_Reg_Get(STATUS_BMS_REMAIN_CHARGE_TIME);
+        uint16_t protect = MB_Reg_Get(STATUS_BMS_PROTECT_STATUS);
 
         // 小端序组装
         payload[0] = battery & 0xFF;
@@ -141,8 +142,9 @@ static void handle_bms_cmd(ProtocolFrame_t *frame)
         payload[7] = (dis_time >> 8) & 0xFF;
         payload[8] = chg_time & 0xFF;
         payload[9] = (chg_time >> 8) & 0xFF;
-
-        app_4G_send_ack(CMD_ID_BMS, payload, 10);
+        payload[10] = protect & 0xFF;
+        payload[11] = (protect >> 8) & 0xFF;
+        app_4G_send_ack(CMD_ID_BMS, payload, 12);
     }
     else
     { // 应对异常写指令兜底
