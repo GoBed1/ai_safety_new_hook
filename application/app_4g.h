@@ -26,7 +26,7 @@
 #define ERR_CODE_CRC_FAIL       0x01  // CRC校验失败
 #define ERR_CODE_LEN_ERROR      0x02  // 帧长度不够/异常
 #define ERR_CODE_UNKNOWN_ID     0x03  // 未知的指令ID
-
+#define ERR_CODE_R_W            0x04  // 不可读取或写入
 // 状态机枚举
 typedef enum {
     STATE_WAIT_START = 0,

@@ -146,7 +146,8 @@ static void handle_bms_cmd(ProtocolFrame_t *frame)
     }
     else
     { // 应对异常写指令兜底
-        app_4G_send_ack(CMD_ID_BMS, NULL, 0);
+        uint8_t err = ERR_CODE_R_W;
+        app_4G_send_ack(CMD_ID_BMS | 0x80, &err, 1);
     }
 }
 
