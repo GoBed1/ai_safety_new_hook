@@ -5,6 +5,7 @@
 #include "app_bms_alarm.h"
 #include "app_heart_led_status.h"
 #include "gps_app.h"
+#include "app_4G.h"
 // ====== 看门狗标志位======
 volatile uint8_t g_task_alive_flags = 0;
 extern UART_HandleTypeDef huart8;
@@ -150,7 +151,8 @@ void init_app_hook_task() {
     init_bms_alarm_module();
     //继电器初始化
     relay_app_init(); 
-    
+    // 4G模块初始化
+    app_4G_init();
     // 初始化默认音量
     MB_Reg_Set(CMD_VOLUME, DEFAULT_VOLUME); 
     //初始化错误码寄存器为0x0000

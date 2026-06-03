@@ -15,6 +15,7 @@
 #include "uart_manage.h"
 #include "Modbus.h"
 #include "app_4g.h"
+#include "at_protocol_handler.h"
 extern EventGroupHandle_t eg; // 初始化事件组为NULL
 
 /* DMA buffer placement */
@@ -23,7 +24,6 @@ extern EventGroupHandle_t eg; // 初始化事件组为NULL
 #else
 #define DMA_BUFFER
 #endif
-
 
 extern UART_HandleTypeDef huart1;
 extern DMA_HandleTypeDef hdma_usart1_rx;
@@ -50,81 +50,127 @@ static uint8_t uart5_process_buff[256U * 4U] DMA_BUFFER;
 static uint32_t shell_recv_callback(uint8_t *buf, uint16_t len)
 {
   printf("\r\n[DEBUG] Shell recv %d : %.*s\r\n", len, len, buf);
-  // if (craner_at_handler(buf, len) != 0U)
-	// {
-	// 	return 0U;
-	// }
 
-	// if (usr_at_handler(buf, len) != 0U)
-	// {
-	// 	return 0U;
-	// }
-  // 转发给名为 "4g" 的接口
+  //  craner 指令 ( OTA 指令.....)
+  if (craner_at_handler(buf, len, NULL) != AT_PREFIX_NOT_MATCH) // 匹配成功
+  {
+    return 0U; // 是 craner 的内部 AT 指令，拦截结束
+  }
+
+  // 识别本地敲的真实 AT 指令
+  if (len >= 2 && (buf[0] == 'A' || buf[0] == 'a') && (buf[1] == 'T' || buf[1] == 't'))
+  {
+    usr_at_handler(buf, len);
+    return 0U;
+  }
+
+  // 转发给 4G 模组
   (void)uart_manage_dma_send_by_name("4g", buf, len);
+
   return 0U;
 }
-extern ParserCtx_t g_parser_ctx; // 4G数据解析上下文
+extern ParserCtx_t g_parser_ctx;                                 // 4G数据解析上下文
 extern void parser_process_byte(ParserCtx_t *ctx, uint8_t byte); // 4G数据逐字节解析函数
 static uint32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
 {
-  // (void)uart_manage_dma_send_by_name("shell", buf, len);
-  printf("\r\n[DEBUG] 4G recv hex %d bytes: ", len);
-    for (uint16_t i = 0; i < len; i++) {
-        printf("%02X ", buf[i]); // 每个字节占2位，高位补0，后面带空格区分
-    }
-    printf("\r\n"); // 打印完换行
-  // printf("\r\n[DEBUG] 4G  recv %d : %.*s\r\n", len, len, buf);
- for (uint16_t i = 0; i < len; i++) {
-        parser_process_byte(&g_parser_ctx, buf[i]);
-    }
-  return 0U;
-}
-const uart_inferface_t uart_manage_table[] = {
- {
-    .name = "shell",                     
-    .uart_h = &huart5,                   
-    .dma_h = &hdma_uart5_rx,
-    .recv_buffer = uart5_recv_buff,
-    .recv_buffer_size = sizeof(uart5_recv_buff),
-    .process_buffer = uart5_process_buff,
-    .process_buffer_size = sizeof(uart5_process_buff),
-    .recv_callback = shell_recv_callback,   
-    .send_buffer = uart5_send_buff,
-    .send_buffer_size = sizeof(uart5_send_buff),
-    .send_fifo_buffer = uart5_send_fifo_buff,
-    .send_fifo_size = sizeof(uart5_send_fifo_buff),
-    .send_callback = NULL,
-  },
+  if ((buf == NULL) || (len == 0U))
   {
-    .name = "4g",                           
-    .uart_h = &huart1,                      
-    .dma_h = &hdma_usart1_rx,
-    .recv_buffer = uart1_recv_buff,
-    .recv_buffer_size = sizeof(uart1_recv_buff),
-    .process_buffer = uart1_process_buff,
-    .process_buffer_size = sizeof(uart1_process_buff),
-    .recv_callback = uart_4g_recv_callback, 
-    .send_buffer = uart1_send_buff,
-    .send_buffer_size = sizeof(uart1_send_buff),
-    .send_fifo_buffer = uart1_send_fifo_buff,
-    .send_fifo_size = sizeof(uart1_send_fifo_buff),
-    .send_callback = NULL,
-  },
+    return 0U;
+  }
+
+  LOGI("Received %u bytes from 4G\r\n", len);
+
+  if ((len >= 2U) && (buf[1] == ','))
+  {
+    switch (buf[0])
     {
-    .name = "gps",
-    .uart_h = &huart3,
-    .dma_h = &hdma_usart3_rx,
-    .recv_buffer = uart3_recv_buff,
-    .recv_buffer_size = sizeof(uart3_recv_buff),
-    .process_buffer = uart3_process_buff,
-    .process_buffer_size = sizeof(uart3_process_buff),
-    .recv_callback = NULL,// ring_task_mode
-    .send_buffer = uart3_send_buff,
-    .send_buffer_size = sizeof(uart3_send_buff),
-    .send_fifo_buffer = uart3_send_fifo_buff,
-    .send_fifo_size = sizeof(uart3_send_fifo_buff),
-    .send_callback = NULL,
-  },
+    case '1':
+    //上位机直接发纯净的 AT+MQTTPUBTPUB 指令，4g发给单片机会做处理：1,....
+      usr_at_handler(&buf[2], len - 2);
+      break;
+    case '2': // OTA 固件升级通道
+
+      break;
+
+    case '3':
+    case '4':
+      printf("\r\n[DEBUG] 4G recv hex %d bytes: ", len);
+      for (uint16_t i = 0; i < len; i++)
+      {
+        printf("%02X ", buf[i]); // 每个字节占2位，高位补0，后面带空格区分
+      }
+      printf("\r\n"); // 打印完换行
+      for (uint16_t i = 2; i < len; i++)
+      {
+        parser_process_byte(&g_parser_ctx, buf[i]);
+      }
+      break;
+
+    default:
+      LOGE("[WARN] Unknown Topic Prefix: %c\r\n", buf[0]);
+      break;
+    }
+
+    return 0U;
+  }
+  {
+    // 4G 模组自身的响应 打印到本地 Shell [4G RAW] OK / ERROR
+    static const uint8_t prefix[] = "[4G RAW] ";
+    const uint16_t prefix_len = (uint16_t)(sizeof(prefix) - 1U);
+    (void)uart_manage_dma_send_by_name("shell", (uint8_t *)prefix, prefix_len);
+    (void)uart_manage_dma_send_by_name("shell", buf, len);
+    // 是否打包发回给 MQTT 上位机
+    // app_4G_send_ack(ACK_ID_SYSTEM_STATUS, buf, len);
+    return 0U;
+  }
+}
+
+const uart_inferface_t uart_manage_table[] = {
+    {
+        .name = "shell",
+        .uart_h = &huart5,
+        .dma_h = &hdma_uart5_rx,
+        .recv_buffer = uart5_recv_buff,
+        .recv_buffer_size = sizeof(uart5_recv_buff),
+        .process_buffer = uart5_process_buff,
+        .process_buffer_size = sizeof(uart5_process_buff),
+        .recv_callback = shell_recv_callback,
+        .send_buffer = uart5_send_buff,
+        .send_buffer_size = sizeof(uart5_send_buff),
+        .send_fifo_buffer = uart5_send_fifo_buff,
+        .send_fifo_size = sizeof(uart5_send_fifo_buff),
+        .send_callback = NULL,
+    },
+    {
+        .name = "4g",
+        .uart_h = &huart1,
+        .dma_h = &hdma_usart1_rx,
+        .recv_buffer = uart1_recv_buff,
+        .recv_buffer_size = sizeof(uart1_recv_buff),
+        .process_buffer = uart1_process_buff,
+        .process_buffer_size = sizeof(uart1_process_buff),
+        .recv_callback = uart_4g_recv_callback,
+        .send_buffer = uart1_send_buff,
+        .send_buffer_size = sizeof(uart1_send_buff),
+        .send_fifo_buffer = uart1_send_fifo_buff,
+        .send_fifo_size = sizeof(uart1_send_fifo_buff),
+        .send_callback = NULL,
+    },
+    {
+        .name = "gps",
+        .uart_h = &huart3,
+        .dma_h = &hdma_usart3_rx,
+        .recv_buffer = uart3_recv_buff,
+        .recv_buffer_size = sizeof(uart3_recv_buff),
+        .process_buffer = uart3_process_buff,
+        .process_buffer_size = sizeof(uart3_process_buff),
+        .recv_callback = NULL, // ring_task_mode
+        .send_buffer = uart3_send_buff,
+        .send_buffer_size = sizeof(uart3_send_buff),
+        .send_fifo_buffer = uart3_send_fifo_buff,
+        .send_fifo_size = sizeof(uart3_send_fifo_buff),
+        .send_callback = NULL,
+    },
 };
 
 #define uart_manage_table_size \
@@ -144,7 +190,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
   uart_manage_send_completed_hook(huart);
 
-   /* Modbus RTU TX callback BEGIN */
+  /* Modbus RTU TX callback BEGIN */
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   int i;
   for (i = 0; i < numberHandlers; i++)
@@ -195,29 +241,26 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
     (void)uart_manage_enable_dma_recv(huart);
   }
 
- for (int i = 0; i < numberHandlers; i++)
+  for (int i = 0; i < numberHandlers; i++)
+  {
+    if (mHandlers[i]->port == huart)
     {
-      if (mHandlers[i]->port == huart)
+
+      if (mHandlers[i]->xTypeHW == USART_HW_DMA)
       {
-
-        if (mHandlers[i]->xTypeHW == USART_HW_DMA)
+        while (HAL_UARTEx_ReceiveToIdle_DMA(mHandlers[i]->port, mHandlers[i]->xBufferRX.uxBuffer, MAX_BUFFER) != HAL_OK)
         {
-          while (HAL_UARTEx_ReceiveToIdle_DMA(mHandlers[i]->port, mHandlers[i]->xBufferRX.uxBuffer, MAX_BUFFER) != HAL_OK)
-          {
-            HAL_UART_DMAStop(mHandlers[i]->port);
-          }
-          __HAL_DMA_DISABLE_IT(mHandlers[i]->port->hdmarx, DMA_IT_HT); // we don't need half-transfer interrupt
+          HAL_UART_DMAStop(mHandlers[i]->port);
         }
-
-        break;
+        __HAL_DMA_DISABLE_IT(mHandlers[i]->port->hdmarx, DMA_IT_HT); // we don't need half-transfer interrupt
       }
+
+      break;
     }
+  }
 }
 
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 {
   (void *)huart;
 }
-
-
-
