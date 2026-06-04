@@ -265,7 +265,7 @@ void init_bms_alarm_module(void)
     extern UART_HandleTypeDef huart8;
     init_modbus_master(
         &bms_sound_light_app,
-        &huart7,
+        &huart8,
         modbus_master_buf,
         sizeof(modbus_master_buf) / sizeof(modbus_master_buf[0]));
     LOGI("bms sound light modbus master start \n");
@@ -384,6 +384,7 @@ void modbus_bms_handle(void)
         else
         {
             LOGE("bms led sound modbus master read fail  \n");
+            MB_Reg_Set(STATUS_BMS_BATTERY,0);
             // 读取失败，设置系统错误码为BMS读取出错
             taskENTER_CRITICAL();
             uint16_t err_bms = MB_Reg_Get(REG_ERROR_CODE);

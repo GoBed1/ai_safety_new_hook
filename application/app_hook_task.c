@@ -3,7 +3,7 @@
 #include "modbus_rtu_server_interface.h"
 #include "app_relay.h"
 #include "app_bms_alarm.h"
-#include "app_heart_led_status.h"
+#include "app_sys_supervisor.h"
 #include "gps_app.h"
 #include "app_4G.h"
 // ====== 看门狗标志位======
@@ -127,7 +127,7 @@ void sys_supervisor_thread(void *argument)
     {
         sys_supervisor_process();
 
-        osDelay(100); 
+        osDelay(200); 
     }
 }
 // 工作状态判定线程
@@ -144,7 +144,7 @@ void init_app_hook_task() {
     
     EventGroupCreate_Init();
     //启动本机的 Modbus 通信服务
-    init_modbus_slave(&modbus_rtu_server, &huart8, FORWARD_SLAVE_ADDR);  
+    init_modbus_slave(&modbus_rtu_server, &huart7, FORWARD_SLAVE_ADDR);  
     //初始化串口管理模块
     init_uart_manage();
     //声光警报和bms,主机初始化

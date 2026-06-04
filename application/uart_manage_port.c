@@ -85,7 +85,7 @@ static uint32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
     switch (buf[0])
     {
     case '1':
-    //上位机直接发纯净的 AT+MQTTPUBTPUB 指令，4g发给单片机会做处理：1,....
+      // 上位机直接发纯净的 AT+MQTTPUBTPUB 指令，4g发给单片机会做处理：1,....
       usr_at_handler(&buf[2], len - 2);
       break;
     case '2': // OTA 固件升级通道
