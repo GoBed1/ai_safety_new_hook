@@ -52,7 +52,7 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(POWER_3V_GPIO_Port, POWER_3V_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOE, FLASH_LIGHT_POWER_EN_Pin|POWER_3V_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(POWER_5V_GPIO_Port, POWER_5V_Pin, GPIO_PIN_SET);
@@ -72,8 +72,8 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(POWER_4G_3V3_GPIO_Port, POWER_4G_3V3_Pin, GPIO_PIN_SET);
 
-  /*Configure GPIO pins : POWER_3V_Pin LED2_Pin */
-  GPIO_InitStruct.Pin = POWER_3V_Pin|LED2_Pin;
+  /*Configure GPIO pins : FLASH_LIGHT_POWER_EN_Pin POWER_3V_Pin LED2_Pin */
+  GPIO_InitStruct.Pin = FLASH_LIGHT_POWER_EN_Pin|POWER_3V_Pin|LED2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
