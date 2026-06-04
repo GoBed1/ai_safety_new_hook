@@ -32,6 +32,31 @@ const IdHandlerMap_t handler_map[] = {
     {0x00, NULL}                                    // 结束标记
 };
 
+void app_4g_update(void)
+{
+    // 获取 4G 接口对象
+    uart_inferface_t *m_obj = uart_manage_get_obj_by_name("4g");
+    if (m_obj == NULL) return;
+
+    // 查看 RingBuffer 里有多少数据可以读
+    lwrb_sz_t available = lwrb_get_full(&m_obj->process_ring_buffer);
+    if (available == 0) return;
+
+    uint8_t to_read_buffer[128];
+    lwrb_sz_t to_read = (available > sizeof(to_read_buffer)) ? sizeof(to_read_buffer) : available;
+    lwrb_sz_t read_size = lwrb_read(&m_obj->process_ring_buffer, to_read_buffer, to_read);
+
+    if (read_size > 0)
+    {
+
+        for (lwrb_sz_t i = 0; i < read_size; i++)
+        {
+            parser_process_byte(&g_parser_ctx, to_read_buffer[i]);
+        }
+    }
+}
+
+
 // CRC16-CCITT (poly 0x1021) initial 0x0000
 static uint16_t crc16_ccitt(const uint8_t *buf, uint32_t len)
 {

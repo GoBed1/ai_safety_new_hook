@@ -11,12 +11,6 @@ volatile uint8_t g_task_alive_flags = 0;
 extern UART_HandleTypeDef huart8;
 static modbusHandler_t modbus_rtu_server;
 
-osThreadId_t ai_safy_slave_handle;
-const osThreadAttr_t ai_safy_slave_attributes = {
-    .name = "AISafySlave",
-    .stack_size = 1024 * 4,
-    .priority = (osPriority_t)osPriorityNormal,
-};
 
 osThreadId_t ai_safy_master_handle;
 const osThreadAttr_t ai_safy_master_attributes = {
@@ -29,29 +23,36 @@ osThreadId_t gps_standby_handle;
 const osThreadAttr_t gps_standby_attributes = {
     .name = "GPSStandby",
     .stack_size = 1024 * 4,
-    .priority = (osPriority_t)osPriorityNormal1,
+    .priority = (osPriority_t)osPriorityBelowNormal,
 };
 // 心跳检测任务
 osThreadId_t relay_heartbeat_handle;
 const osThreadAttr_t relay_heartbeat_attributes = {
     .name = "RelayHeartbeat",
     .stack_size = 1024 * 4,
-    .priority = (osPriority_t)osPriorityNormal,
+    .priority = (osPriority_t)osPriorityAboveNormal,
 };
 // 系统监控线程
 osThreadId_t sys_supervisor_handle;
 const osThreadAttr_t sys_supervisor_attributes = {
     .name = "SysSupervisor",
     .stack_size = 1024 * 4,
-    .priority = (osPriority_t)osPriorityBelowNormal, 
+    .priority = (osPriority_t)osPriorityBelowNormal1, 
 };
 // 工作状态判定线程
 osThreadId_t work_mode_handle;
 const osThreadAttr_t work_mode_attributes = {
     .name = "WorkModeTask",
     .stack_size = 1024 * 2,
-    .priority = (osPriority_t)osPriorityNormal,
+    .priority = (osPriority_t)osPriorityBelowNormal1,
 };
+osThreadId_t app_4g_handle;
+const osThreadAttr_t app_4g_attributes = {
+    .name = "App4GTask",
+    .stack_size = 1024 * 4,
+    .priority = (osPriority_t)osPriorityNormal1, 
+};
+
 EventGroupHandle_t eg = NULL; 
 
 void EventGroupCreate_Init(void) {
@@ -139,6 +140,15 @@ void work_mode_thread(void *argument)
         osDelay(100); 
     }
 }
+void app_4g_thread(void *argument)
+{
+    for (;;)
+    {
+        // g_task_alive_flags |= TASK_4G_ALIVE; 
+        app_4g_update(); 
+        osDelay(10); 
+    }
+}
 // 吊钩系统总初始化入口
 void init_app_hook_task() {
     
@@ -163,5 +173,6 @@ void init_app_hook_task() {
     relay_heartbeat_handle = osThreadNew(relay_heartbeat_thread, NULL, &relay_heartbeat_attributes);
     gps_standby_handle = osThreadNew(gps_standby_thread, NULL, &gps_standby_attributes);
     sys_supervisor_handle = osThreadNew(sys_supervisor_thread, NULL, &sys_supervisor_attributes);
-    // work_mode_handle = osThreadNew(work_mode_thread, NULL, &work_mode_attributes);
+    app_4g_handle = osThreadNew(app_4g_thread, NULL, &app_4g_attributes);
+    work_mode_handle = osThreadNew(work_mode_thread, NULL, &work_mode_attributes);
 }

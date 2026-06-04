@@ -286,7 +286,7 @@ void rtc_power_schedule_check(void)
             MB_Reg_Set(STATUS_LED_SWITCH, 0);
             MB_Reg_Set(STATUS_BUZZER, 0);
 
-            // HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_RESET);
             LOGI("[PWR] Enter SOFT standby. Relay 2 OFF.\r\n");
 
             // 清除可能存在的心跳和掉线错误，防止休眠期间板载LED还在闪错
@@ -299,7 +299,7 @@ void rtc_power_schedule_check(void)
         {
             is_soft_standby = 0; // 标记系统退出软休眠状态
 
-            // HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
+            HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
             LOGI("[PWR] Exit SOFT standby. Relay 2 ON.\r\n");
         }
     }
@@ -307,7 +307,7 @@ void rtc_power_schedule_check(void)
     else if (soft_enable == 0 && is_soft_standby == 1)
     {
         is_soft_standby = 0;
-        // HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
         LOGI("[PWR] soft standby Disabled. Force Exit SOFT standby.\r\n");
     }
 }

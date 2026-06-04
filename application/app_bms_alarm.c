@@ -384,7 +384,7 @@ void modbus_bms_handle(void)
         else
         {
             LOGE("bms led sound modbus master read fail  \n");
-            MB_Reg_Set(STATUS_BMS_BATTERY,0);
+            MB_Reg_Set(STATUS_BMS_BATTERY, 0);
             // 读取失败，设置系统错误码为BMS读取出错
             taskENTER_CRITICAL();
             uint16_t err_bms = MB_Reg_Get(REG_ERROR_CODE);
@@ -500,7 +500,12 @@ void power_on_self_test(void)
     {
         LOGE("[POST] Sound & Light test command FAILED!\n");
     }
-
+    //bug修改：上电自检结束时“清洗”硬件状态
+    osDelay(5500); 
+    cmd_telegram.u16RegAdd = 0x6003; 
+    cmd_payload = 0x0000;            
+    ModbusQuery(&bms_sound_light_app, cmd_telegram);
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
     // 4. 同步 Modbus 状态机寄存器，防止后续逻辑误判
     MB_Reg_Set(STATUS_LED_SWITCH, 0);
     MB_Reg_Set(STATUS_BUZZER, 0);

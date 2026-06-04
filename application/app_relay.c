@@ -14,9 +14,7 @@ static uint8_t relay_is_on = 1;
 void relay_app_init(void)
 {
     // 初始化引脚状态
-    // HAL_GPIO_WritePin(RELAY_1_PIN_GPIO_Port, RELAY_1_PIN_Pin, GPIO_PIN_SET);
-    // HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
-
+        HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
     // 初始化心跳记录（使用真实的运行时间）
     last_heartbeat_val = MB_Reg_Get(STATUS_HEART_BEAT);
     recv_heartbeat_time = xTaskGetTickCount();
@@ -37,7 +35,7 @@ void process_relay_logic(void)
             // 如果心跳功能被禁用，确保继电器保持在默认状态（上电）
             if (relay_is_on == 0)
             {
-                // HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
+                HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
                 relay_is_on = 1;
                 LOGI("[Heartbeat] Disabled. Relay 2 SET to 1.\r\n");
             }
@@ -66,7 +64,8 @@ void process_relay_logic(void)
             if (relay_is_on == 0)
             {
                 // 收到心跳，继电器引脚置为1 (上电)
-                // HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
+                HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
+                LOGI("[Heartbeat] Heartbeat received. Relay 2 SET to 1.\r\n");
                 last_volume = 0xFFFF;             // 音量更新,主循环会更新
                 relay_is_on = 1;                  // 标记为有电状态
                 MB_Reg_Set(STATUS_LED_SWITCH, 0); // 灯关闭
@@ -74,7 +73,7 @@ void process_relay_logic(void)
             else
             {
                 // 收到心跳，继电器引脚置为1 (上电)
-                // HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_SET);
+                HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
                 LOGI("[Heartbeat] Host active. Relay 2 SET to 1. Reg[104]=%d\r\n", current_heartbeat);
             }
             taskENTER_CRITICAL();
@@ -105,7 +104,7 @@ void process_relay_logic(void)
 
                 relay_is_on = 0;
 
-                // HAL_GPIO_WritePin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin, GPIO_PIN_RESET);
+                HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_RESET);
                 taskENTER_CRITICAL();
                 uint16_t err_heart = MB_Reg_Get(REG_ERROR_CODE);
                 MB_Reg_Set(REG_ERROR_CODE, err_heart | ERR_HEARTBEAT_TIMEOUT); // 叠加心跳超时错误

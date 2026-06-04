@@ -94,18 +94,20 @@ static uint32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
 
     case '3':
     case '4':
-      printf("\r\n[DEBUG] 4G recv hex %d bytes: ", len);
-      for (uint16_t i = 0; i < len; i++)
+      // printf("\r\n[DEBUG] 4G recv hex %d bytes: ", len);
+      // for (uint16_t i = 0; i < len; i++)
+      // {
+      //   printf("%02X ", buf[i]); // 每个字节占2位，高位补0，后面带空格区分
+      // }
+      // printf("\r\n"); // 打印完换行
       {
-        printf("%02X ", buf[i]); // 每个字节占2位，高位补0，后面带空格区分
-      }
-      printf("\r\n"); // 打印完换行
-      for (uint16_t i = 2; i < len; i++)
-      {
-        parser_process_byte(&g_parser_ctx, buf[i]);
+        uart_inferface_t *m_obj = uart_manage_get_obj_by_name("4g");
+        if (m_obj != NULL)
+        {
+           uart_manage_write_to_recv_ring(m_obj, &buf[2], len - 2);
+        }
       }
       break;
-
     default:
       LOGE("[WARN] Unknown Topic Prefix: %c\r\n", buf[0]);
       break;
