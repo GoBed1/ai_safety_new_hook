@@ -49,37 +49,38 @@ void sys_supervisor_process(void)
 }
 
 // 工作状态模式判定逻辑
-// void work_mode_logic(void)
-// {
-//     uint16_t current_error = MB_Reg_Get(REG_ERROR_CODE);
-//     uint16_t current_battery = MB_Reg_Get(STATUS_BMS_BATTERY);
+void work_mode_logic(void)
+{
+    uint16_t current_error = MB_Reg_Get(REG_ERROR_CODE);
+    uint16_t current_battery = MB_Reg_Get(STATUS_BMS_BATTERY);
 
-//     GPIO_PinState relay2_state = HAL_GPIO_ReadPin(RELAY_2_PIN_GPIO_Port, RELAY_2_PIN_Pin);
+    GPIO_PinState relay2_state = HAL_GPIO_ReadPin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin);
 
-//     WorkMode_t target_mode = MODE_DEVICE_STANDBY;
 
-//     // 异常判断
-//     if (current_error != ERR_NONE)
-//     {
-//         target_mode = DEVICE_ERROR;
-//     }
-//     // 软待机（爆闪灯断电）
-//     else if (relay2_state == GPIO_PIN_RESET)
-//     {
-//         target_mode = MODE_DEVICE_STANDBY;
-//     }
-//     // 低电量判断
-//     else if (current_battery <= LOW_BATTERY_THRESHOLD)
-//     {
-//         target_mode = MODE_LOW_BATTERY;
-//     }
-//     // 正常工作
-//     else
-//     {
-//         target_mode = MODE_COM_WORKING;
-//     }
-//     MB_Reg_Set(STATUS_WORK_MODE, (uint16_t)target_mode);
-// }
+    WorkMode_t target_mode = MODE_DEVICE_STANDBY;
+
+    // 异常判断
+    if (current_error != ERR_NONE)
+    {
+        target_mode = DEVICE_ERROR;
+    }
+    // 软待机（爆闪灯断电）
+    else if (relay2_state == GPIO_PIN_RESET)
+    {
+        target_mode = MODE_DEVICE_STANDBY;
+    }
+    // 低电量判断
+    else if (current_battery <= LOW_BATTERY_THRESHOLD)
+    {
+        target_mode = MODE_LOW_BATTERY;
+    }
+    // 正常工作
+    else
+    {
+        target_mode = MODE_COM_WORKING;
+    }
+    MB_Reg_Set(STATUS_WORK_MODE, (uint16_t)target_mode);
+}
 
 
 
