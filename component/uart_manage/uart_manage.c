@@ -244,6 +244,11 @@ static int uart_manage_dma_send_impl(uart_inferface_t *m_obj, uint8_t *buf, uint
   uint16_t to_send_len;
   uint16_t to_tx_fifo_len;
 
+  if ((m_obj->is_sending != 0U) && (m_obj->uart_h->gState != HAL_UART_STATE_BUSY_TX))
+  {
+    m_obj->is_sending = 0U;
+  }
+
   if (m_obj->is_sending == 0U)
   {
     if (len < m_obj->send_buffer_size)
@@ -280,12 +285,12 @@ static int uart_manage_dma_send_impl(uart_inferface_t *m_obj, uint8_t *buf, uint
   {
     memcpy(m_obj->send_buffer, buf, to_send_len);
     dma_clean_cache_by_addr(m_obj->send_buffer, to_send_len);
+    m_obj->is_sending = 1U;
     if (HAL_UART_Transmit_DMA(m_obj->uart_h, m_obj->send_buffer, to_send_len) != HAL_OK)
     {
       m_obj->is_sending = 0U;
       return -1;
     }
-    m_obj->is_sending = 1U;
   }
   if (to_tx_fifo_len > 0)
   {
