@@ -4,7 +4,7 @@
 #define LOGD(...) printf(__VA_ARGS__)
 #define LOGI(...) printf(__VA_ARGS__)
 #define LOGE(...) printf(__VA_ARGS__)
-
+#define UART_RECV_RING_NEAR_FULL_PERCENT 80U
 static uart_inferface_t uart_manage[UART_MANAGE_MAX_OBJECTS] = {0};
 
 #if UART_MANAGE_RECV_RING_STATS_ENABLE

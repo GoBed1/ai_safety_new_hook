@@ -94,7 +94,7 @@ extern "C"
 
 // 各模块的独立开关 (1: 开启该模块日志, 0: 完全关闭该模块日志)
 #define LOG_SWITCH_ALARM               0   // ALARM模块日志
-#define LOG_SWITCH_GPS                 1   // GPS模块日志
+#define LOG_SWITCH_GPS                 0   // GPS模块日志
 #define LOG_SWITCH_RELAY               1   // RELAY模块日志
 #define LOG_SWITCH_HEARTLED_STATUS     1   // HEARTLED_STATUS模块日志
 #define LOG_SWITCH_4G                  1   // 4G模块日志
@@ -141,7 +141,7 @@ extern "C"
 /* 2. 系统调度、看门狗与阈值配置 (System & Thresholds)                               */
 /* ========================================================================= */
 #define TIMEZONE_OFFSET_BEIJING                        8       // 北京时间偏移量 (UTC+8)
-#define HEARTBEAT_SILENCE_MS                           5000    // 继电器心跳超时静默时间(5s)
+#define HEARTBEAT_SILENCE_MS                           10000    // 继电器心跳超时静默时间(10s)
 #define HEARTBEAT_TIMEOUT_MS                           60000   // 继电器心跳超时断电时间(60s)
 #define MODBUS_WAIT_TIMEOUT_MS                         1000    // Modbus等待超时时间
                            
