@@ -280,14 +280,18 @@ static int uart_manage_dma_send_impl(uart_inferface_t *m_obj, uint8_t *buf, uint
   {
     memcpy(m_obj->send_buffer, buf, to_send_len);
     dma_clean_cache_by_addr(m_obj->send_buffer, to_send_len);
+    if (HAL_UART_Transmit_DMA(m_obj->uart_h, m_obj->send_buffer, to_send_len) != HAL_OK)
+    {
+      m_obj->is_sending = 0U;
+      return -1;
+    }
     m_obj->is_sending = 1U;
-    HAL_UART_Transmit_DMA(m_obj->uart_h, m_obj->send_buffer, to_send_len);
   }
   if (to_tx_fifo_len > 0)
   {
-    uint8_t put_len;
+    int put_len;
     put_len = fifo_s_puts(&m_obj->send_fifo, (char *)(buf) + to_send_len, to_tx_fifo_len);
-    if (put_len != to_tx_fifo_len)
+    if (put_len != (int)to_tx_fifo_len)
     {
       return -1;
     }
@@ -333,8 +337,14 @@ void uart_manage_send_completed_hook(UART_HandleTypeDef *huart)
         }
       fifo_s_gets(&m_obj->send_fifo, (char *)m_obj->send_buffer, send_num);
       dma_clean_cache_by_addr(m_obj->send_buffer, send_num);
-      m_obj->is_sending = 1U;
-      HAL_UART_Transmit_DMA(m_obj->uart_h, m_obj->send_buffer, send_num);
+      if (HAL_UART_Transmit_DMA(m_obj->uart_h, m_obj->send_buffer, send_num) == HAL_OK)
+      {
+        m_obj->is_sending = 1U;
+      }
+      else
+      {
+        m_obj->is_sending = 0U;
+      }
     }
     else
     {
