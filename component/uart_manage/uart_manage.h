@@ -22,7 +22,7 @@ typedef uint32_t (*interface_recv_fn_t)(uint8_t *buf, uint16_t len);
 #define UART_MANAGE_MAX_OBJECTS 8U
 
 #ifndef UART_MANAGE_RECV_RING_STATS_ENABLE
-#define UART_MANAGE_RECV_RING_STATS_ENABLE 1U
+#define UART_MANAGE_RECV_RING_STATS_ENABLE 0U
 #endif
 
 #if UART_MANAGE_RECV_RING_STATS_ENABLE
