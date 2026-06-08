@@ -18,6 +18,10 @@
 #include "at_protocol_handler.h"
 extern EventGroupHandle_t eg; // 初始化事件组为NULL
 
+#ifndef UART_MANAGE_RECV_RING_STATS_ENABLE
+#define UART_MANAGE_RECV_RING_STATS_ENABLE 0U
+#endif
+
 /* DMA buffer placement */
 #if defined(__GNUC__)
 #define DMA_BUFFER __attribute__((section(".dma_buffer"), aligned(32)))
@@ -74,57 +78,36 @@ extern void parser_process_byte(ParserCtx_t *ctx, uint8_t byte); // 4G数据逐�
 static uint32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
 {
   if ((buf == NULL) || (len == 0U))
-  {
     return 0U;
-  }
 
-  LOGI("Received %u bytes from 4G\r\n", len);
-
+  // 1. 如果确认是前缀 (长度>=2且带有',')
   if ((len >= 2U) && (buf[1] == ','))
   {
-    switch (buf[0])
+    if (buf[0] == '1')
     {
-    case '1':
-      // 上位机直接发纯净的 AT+MQTTPUBTPUB 指令，4g发给单片机会做处理：1,....
       usr_at_handler(&buf[2], len - 2);
-      break;
-    case '2': // OTA 固件升级通道
-
-      break;
-
-    case '3':
-    case '4':
-      // printf("\r\n[DEBUG] 4G recv hex %d bytes: ", len);
-      // for (uint16_t i = 0; i < len; i++)
-      // {
-      //   printf("%02X ", buf[i]); // 每个字节占2位，高位补0，后面带空格区分
-      // }
-      // printf("\r\n"); // 打印完换行
-      {
-        uart_inferface_t *m_obj = uart_manage_get_obj_by_name("4g");
-        if (m_obj != NULL)
-        {
-           uart_manage_write_to_recv_ring(m_obj, &buf[2], len - 2);
-        }
-      }
-      break;
-    default:
-      LOGE("[WARN] Unknown Topic Prefix: %c\r\n", buf[0]);
-      break;
+      return 0U;
     }
+    else if (buf[0] == '3' || buf[0] == '4')
+    {
+      // 剥离前缀，把有效负荷扔进 RingBuffer
+      uart_manage_write_to_recv_ring(uart_manage_get_obj_by_name("4g"), &buf[2], len - 2);
+      return 0U;
+    }
+  }
 
-    return 0U;
-  }
-  {
-    // 4G 模组自身的响应 打印到本地 Shell [4G RAW] OK / ERROR
-    static const uint8_t prefix[] = "[4G RAW] ";
-    const uint16_t prefix_len = (uint16_t)(sizeof(prefix) - 1U);
-    (void)uart_manage_dma_send_by_name("shell", (uint8_t *)prefix, prefix_len);
-    (void)uart_manage_dma_send_by_name("shell", buf, len);
-    // 是否打包发回给 MQTT 上位机
-    // app_4G_send_ack(ACK_ID_SYSTEM_STATUS, buf, len);
-    return 0U;
-  }
+  // 2. 防拆包兜底：如果没有特征前缀，但包含了 0xA5 (你的帧头)，
+  // 说明很可能是被截断的后半截数据包，或者是紧接着的纯净指令，全部扔进 RingBuffer 让状态机处理！
+  // 注意：如果有纯文本AT回复，可能会误入，但你的 CRC 状态机会自动忽略它们。
+  uart_manage_write_to_recv_ring(uart_manage_get_obj_by_name("4g"), buf, len);
+  // 4G 模组自身的响应 打印到本地 Shell [4G RAW] OK / ERROR
+  static const uint8_t prefix[] = "[4G RAW] ";
+  const uint16_t prefix_len = (uint16_t)(sizeof(prefix) - 1U);
+  (void)uart_manage_dma_send_by_name("shell", (uint8_t *)prefix, prefix_len);
+  (void)uart_manage_dma_send_by_name("shell", buf, len);
+  // 是否打包发回给 MQTT 上位机
+  // app_4G_send_ack(ACK_ID_SYSTEM_STATUS, buf, len);
+  return 0U;
 }
 
 const uart_inferface_t uart_manage_table[] = {
@@ -232,6 +215,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
+  if (huart == &huart1)
+  {
+    printf("\r\n[DEBUG] UART1 RxEvent size: %d\r\n", size);
+  }
+
   uart_inferface_t *m_obj = uart_manage_get_obj(huart);
 
   if (m_obj != NULL)

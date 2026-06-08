@@ -40,8 +40,9 @@ void app_4g_update(void)
 
     // 查看 RingBuffer 里有多少数据可以读
     lwrb_sz_t available = lwrb_get_full(&m_obj->process_ring_buffer);
-    if (available == 0) return;
-
+    if (available == 0) {
+        return;
+    }
     uint8_t to_read_buffer[128];
     lwrb_sz_t to_read = (available > sizeof(to_read_buffer)) ? sizeof(to_read_buffer) : available;
     lwrb_sz_t read_size = lwrb_read(&m_obj->process_ring_buffer, to_read_buffer, to_read);

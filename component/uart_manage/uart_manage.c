@@ -12,7 +12,7 @@
 #define LOGD(...) printf(__VA_ARGS__)
 #define LOGI(...) printf(__VA_ARGS__)
 #define LOGE(...) printf(__VA_ARGS__)
-
+#define UART_RECV_RING_NEAR_FULL_PERCENT 80U
 static uart_inferface_t uart_manage[UART_MANAGE_MAX_OBJECTS] = {0};
 
 static inline uintptr_t dma_align_down_32(uintptr_t addr)
@@ -206,6 +206,7 @@ void uart_manage_enable_dma_recv(UART_HandleTypeDef *huart)
 
   if (st == HAL_BUSY)
   {
+    printf("11111111enable idle dma recv failed[%X]\r\n",m_obj->uart_h);
     HAL_Delay(100);
   }
 
