@@ -1,13 +1,5 @@
 #include "uart_manage.h"
 
-#include <stdint.h>
-#include <string.h>
-
-#include "main.h"
-#include "cmsis_os.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "stm32h7xx_hal_uart.h"
 
 #define LOGD(...) printf(__VA_ARGS__)
 #define LOGI(...) printf(__VA_ARGS__)

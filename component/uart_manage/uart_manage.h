@@ -2,15 +2,19 @@
 #ifndef UART_MANAGE_H
 #define UART_MANAGE_H
 
-#include "lwrb.h"
-#include <stddef.h>
-#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "stm32h7xx_hal.h"
+#include "stm32h7xx_hal_uart.h"
+#include "lwrb.h"
 #include "fifo.h"
+
+#include "uart_manage_port.h"
 
 typedef uint32_t (*interface_send_fn_t)(uint8_t *buf, uint16_t len);
 typedef uint32_t (*interface_recv_fn_t)(uint8_t *buf, uint16_t len);
