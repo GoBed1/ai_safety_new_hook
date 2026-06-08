@@ -204,11 +204,6 @@ void uart_manage_enable_dma_recv(UART_HandleTypeDef *huart)
     return;
   }
 
-  if (st == HAL_BUSY)
-  {
-    HAL_Delay(100);
-  }
-
   (void)HAL_UART_DMAStop(m_obj->uart_h);
   m_obj->uart_h->Instance->ICR = USART_ICR_FECF | USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_PECF | USART_ICR_IDLECF;
   (void)m_obj->uart_h->Instance->RDR;
@@ -225,36 +220,12 @@ void uart_manage_enable_dma_recv_by_name(const char *name)
 {
   uart_inferface_t *m_obj = uart_manage_get_obj_by_name(name);
 
-  if (m_obj == NULL || m_obj->dma_h == NULL || m_obj->uart_h == NULL)
+  if (m_obj == NULL)
   {
     return;
   }
 
-  m_obj->uart_h->Instance->ICR = USART_ICR_FECF | USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_PECF | USART_ICR_IDLECF;
-  (void)m_obj->uart_h->Instance->RDR;
-
-  HAL_StatusTypeDef st = HAL_UARTEx_ReceiveToIdle_DMA(m_obj->uart_h, m_obj->recv_buffer, m_obj->recv_buffer_size);
-  if (st == HAL_OK)
-  {
-    __HAL_DMA_DISABLE_IT(m_obj->dma_h, DMA_IT_HT);
-    return;
-  }
-
-  if (st == HAL_BUSY)
-  {
-    HAL_Delay(100);
-  }
-
-  (void)HAL_UART_DMAStop(m_obj->uart_h);
-  m_obj->uart_h->Instance->ICR = USART_ICR_FECF | USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_PECF | USART_ICR_IDLECF;
-  (void)m_obj->uart_h->Instance->RDR;
-  st = HAL_UARTEx_ReceiveToIdle_DMA(m_obj->uart_h, m_obj->recv_buffer, m_obj->recv_buffer_size);
-  if (st == HAL_OK)
-  {
-    __HAL_DMA_DISABLE_IT(m_obj->dma_h, DMA_IT_HT);
-  }else{
-    printf("double enable idle dma recv failed[%X]\r\n",m_obj->uart_h);
-  }
+  uart_manage_enable_dma_recv(m_obj->uart_h);
 }
 
 static int uart_manage_dma_send_impl(uart_inferface_t *m_obj, uint8_t *buf, uint16_t len)
