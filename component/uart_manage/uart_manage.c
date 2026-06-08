@@ -353,6 +353,18 @@ void uart_manage_send_completed_hook(UART_HandleTypeDef *huart)
     return;
 }
 
+void uart_manage_reset_dma_send(UART_HandleTypeDef *huart)
+{
+  uart_inferface_t *m_obj = uart_manage_get_obj(huart);
+
+  if (m_obj == NULL)
+  {
+    return;
+  }
+
+  m_obj->is_sending = 0U;
+}
+
 int uart_manage_write_to_recv_ring(uart_inferface_t *m_obj, uint8_t *buf, uint16_t len)
 {
   if (m_obj == NULL || buf == NULL || len == 0U)

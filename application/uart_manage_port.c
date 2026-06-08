@@ -185,6 +185,7 @@ void init_uart_manage(void)
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
+  uart_manage_reset_dma_send(huart);
   (void)uart_manage_enable_dma_recv(huart);
 }
 

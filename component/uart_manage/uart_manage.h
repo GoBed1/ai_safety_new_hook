@@ -87,6 +87,7 @@ int uart_manage_dma_send(UART_HandleTypeDef *huart, uint8_t *buf, uint16_t len);
 int uart_manage_dma_send_by_name(const char *name, uint8_t *buf, uint16_t len);
 
 void uart_manage_send_completed_hook(UART_HandleTypeDef *huart);
+void uart_manage_reset_dma_send(UART_HandleTypeDef *huart);
 int uart_manage_write_to_recv_ring(uart_inferface_t *m_obj, uint8_t *buf, uint16_t len);
 #if UART_MANAGE_RECV_RING_STATS_ENABLE
 int uart_manage_get_recv_ring_stats(uart_inferface_t *m_obj, uart_recv_ring_stats_t *stats);
