@@ -212,7 +212,7 @@ void uart_manage_enable_dma_recv(UART_HandleTypeDef *huart)
   {
     __HAL_DMA_DISABLE_IT(m_obj->dma_h, DMA_IT_HT);
   }else{
-    printf("double enable idle dma recv failed[%X]\r\n",m_obj->uart_h);
+    LOGE("double enable idle dma recv failed[%X]\r\n",m_obj->uart_h);
   }
 }
 
