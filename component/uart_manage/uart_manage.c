@@ -15,6 +15,20 @@
 
 static uart_inferface_t uart_manage[UART_MANAGE_MAX_OBJECTS] = {0};
 
+#if UART_MANAGE_RECV_RING_STATS_ENABLE
+#define UART_RECV_RING_NEAR_FULL_PERCENT 80U
+
+static uint8_t uart_manage_recv_ring_is_near_full(uint16_t size, lwrb_sz_t used)
+{
+  if (size == 0U)
+  {
+    return 0U;
+  }
+
+  return (used >= (((lwrb_sz_t)size * UART_RECV_RING_NEAR_FULL_PERCENT) / 100U)) ? 1U : 0U;
+}
+#endif
+
 static inline uintptr_t dma_align_down_32(uintptr_t addr)
 {
   return addr & ~(uintptr_t)31U;
@@ -348,15 +362,62 @@ int uart_manage_write_to_recv_ring(uart_inferface_t *m_obj, uint8_t *buf, uint16
   lwrb_sz_t free_len = lwrb_get_free(&m_obj->process_ring_buffer);
   if (to_write_len > free_len)
   {
+#if UART_MANAGE_RECV_RING_STATS_ENABLE
+    m_obj->recv_ring_overflow_count++;
+    m_obj->recv_ring_drop_bytes += (uint32_t)(to_write_len - free_len);
+#endif
     to_write_len = free_len;
   }
 
-  if (lwrb_write(&m_obj->process_ring_buffer, buf, to_write_len) != to_write_len)
+  if ((to_write_len > 0U) && (lwrb_write(&m_obj->process_ring_buffer, buf, to_write_len) != to_write_len))
   {
     return -1;
   }
+
+#if UART_MANAGE_RECV_RING_STATS_ENABLE
+  lwrb_sz_t used_len = lwrb_get_full(&m_obj->process_ring_buffer);
+  if (used_len > (lwrb_sz_t)m_obj->recv_ring_high_watermark)
+  {
+    m_obj->recv_ring_high_watermark = (uint16_t)used_len;
+  }
+#endif
+
   return (int)to_write_len;
 }
+
+#if UART_MANAGE_RECV_RING_STATS_ENABLE
+int uart_manage_get_recv_ring_stats(uart_inferface_t *m_obj, uart_recv_ring_stats_t *stats)
+{
+  if ((m_obj == NULL) || (stats == NULL))
+  {
+    return -1;
+  }
+
+  lwrb_sz_t used_len = lwrb_get_full(&m_obj->process_ring_buffer);
+  lwrb_sz_t free_len = lwrb_get_free(&m_obj->process_ring_buffer);
+
+  if (used_len > (lwrb_sz_t)m_obj->recv_ring_high_watermark)
+  {
+    m_obj->recv_ring_high_watermark = (uint16_t)used_len;
+  }
+
+  stats->size = m_obj->process_buffer_size;
+  stats->used = (uint16_t)used_len;
+  stats->free = (uint16_t)free_len;
+  stats->high_watermark = m_obj->recv_ring_high_watermark;
+  stats->drop_bytes = m_obj->recv_ring_drop_bytes;
+  stats->overflow_count = m_obj->recv_ring_overflow_count;
+  stats->near_full = uart_manage_recv_ring_is_near_full(m_obj->process_buffer_size, used_len);
+
+  return 0;
+}
+
+int uart_manage_get_recv_ring_stats_by_name(const char *name, uart_recv_ring_stats_t *stats)
+{
+  uart_inferface_t *m_obj = uart_manage_get_obj_by_name(name);
+  return uart_manage_get_recv_ring_stats(m_obj, stats);
+}
+#endif
 
 void uart_manage_recv_idle_hook(uart_inferface_t *m_obj, interrput_type int_type, uint16_t size)
 {

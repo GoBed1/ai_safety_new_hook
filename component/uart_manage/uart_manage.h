@@ -16,6 +16,24 @@ typedef uint32_t (*interface_send_fn_t)(uint8_t *buf, uint16_t len);
 typedef uint32_t (*interface_recv_fn_t)(uint8_t *buf, uint16_t len);
 
 #define UART_MANAGE_MAX_OBJECTS 8U
+
+#ifndef UART_MANAGE_RECV_RING_STATS_ENABLE
+#define UART_MANAGE_RECV_RING_STATS_ENABLE 1U
+#endif
+
+#if UART_MANAGE_RECV_RING_STATS_ENABLE
+typedef struct
+{
+    uint16_t size;
+    uint16_t used;
+    uint16_t free;
+    uint16_t high_watermark;
+    uint32_t drop_bytes;
+    uint32_t overflow_count;
+    uint8_t near_full;
+} uart_recv_ring_stats_t;
+#endif
+
 typedef struct uart_interface
 {
     char name[50];
@@ -30,6 +48,11 @@ typedef struct uart_interface
     uint16_t process_buffer_size;
     lwrb_t process_ring_buffer;
     interface_recv_fn_t recv_callback;
+#if UART_MANAGE_RECV_RING_STATS_ENABLE
+    uint16_t recv_ring_high_watermark;
+    uint32_t recv_ring_drop_bytes;
+    uint32_t recv_ring_overflow_count;
+#endif
 
     uint8_t *send_buffer;
     uint16_t send_buffer_size;
@@ -61,6 +84,10 @@ int uart_manage_dma_send_by_name(const char *name, uint8_t *buf, uint16_t len);
 
 void uart_manage_send_completed_hook(UART_HandleTypeDef *huart);
 int uart_manage_write_to_recv_ring(uart_inferface_t *m_obj, uint8_t *buf, uint16_t len);
+#if UART_MANAGE_RECV_RING_STATS_ENABLE
+int uart_manage_get_recv_ring_stats(uart_inferface_t *m_obj, uart_recv_ring_stats_t *stats);
+int uart_manage_get_recv_ring_stats_by_name(const char *name, uart_recv_ring_stats_t *stats);
+#endif
 void uart_manage_recv_idle_hook(uart_inferface_t *m_obj, interrput_type int_type, uint16_t size);
 
 #ifdef __cplusplus
