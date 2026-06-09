@@ -61,7 +61,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPS_EN_GPIO_Port, GPS_EN_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, GPS_EN_Pin|PWD_LED_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(HEART_LED_GPIO_Port, HEART_LED_Pin, GPIO_PIN_SET);
@@ -86,12 +86,12 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(POWER_5V_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : GPS_EN_Pin */
-  GPIO_InitStruct.Pin = GPS_EN_Pin;
+  /*Configure GPIO pins : GPS_EN_Pin PWD_LED_Pin */
+  GPIO_InitStruct.Pin = GPS_EN_Pin|PWD_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPS_EN_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : HEART_LED_Pin RESET_4G_Pin RELOAD_4G_Pin */
   GPIO_InitStruct.Pin = HEART_LED_Pin|RESET_4G_Pin|RELOAD_4G_Pin;

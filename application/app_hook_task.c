@@ -154,7 +154,7 @@ void init_app_hook_task() {
     
     EventGroupCreate_Init();
     //启动本机的 Modbus 通信服务
-    init_modbus_slave(&modbus_rtu_server, &huart7, FORWARD_SLAVE_ADDR);  
+    init_modbus_slave(&modbus_rtu_server, &huart8, FORWARD_SLAVE_ADDR);  
     //初始化串口管理模块
     init_uart_manage();
     //声光警报和bms,主机初始化

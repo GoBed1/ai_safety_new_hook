@@ -75,6 +75,8 @@ void Error_Handler(void);
 #define RELOAD_4G_GPIO_Port GPIOD
 #define POWER_4G_3V3_Pin GPIO_PIN_15
 #define POWER_4G_3V3_GPIO_Port GPIOA
+#define PWD_LED_Pin GPIO_PIN_3
+#define PWD_LED_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
