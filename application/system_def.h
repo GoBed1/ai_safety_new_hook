@@ -157,11 +157,11 @@ extern "C"
 
 
  // -看门狗打卡标志位======
-#define TASK_AI_SAFY_ALIVE    (1 << 0)
-#define TASK_GPS_ALIVE        (1 << 1)
-#define TASK_RELAY_ALIVE      (1 << 2)
-// 需要打卡的任务总和 (二进制 0000 1111 = 0x0F)
-#define TASK_ALL_ALIVE        (TASK_AI_SAFY_ALIVE | TASK_GPS_ALIVE | TASK_RELAY_ALIVE )
+// #define TASK_AI_SAFY_ALIVE    (1 << 0)
+// #define TASK_GPS_ALIVE        (1 << 1)
+// #define TASK_RELAY_ALIVE      (1 << 2)
+// // 需要打卡的任务总和 (二进制 0000 1111 = 0x0F)
+// #define TASK_ALL_ALIVE        (TASK_AI_SAFY_ALIVE | TASK_GPS_ALIVE | TASK_RELAY_ALIVE )
 
 /* ========================================================================= */
 /* 3. GPS 模块相关配置 和 休眠配置                                           */

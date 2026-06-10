@@ -21,11 +21,17 @@ uint8_t charge_count = 0;
 uint16_t now_volume;
 uint16_t last_volume = 0;
 
-modbusHandler_t bms_sound_light_app;
+// 【修改点：拆分 Modbus Handler】
+modbusHandler_t bms_app;         // 电池 BMS (USART6)
+modbusHandler_t sound_light_app; // 声光报警灯 (USART7)
+
 uint16_t bms_results[2] = {0};
 uint16_t remainDischargeTime_results[2] = {0};
 modbus_t telegram[8];
-uint16_t modbus_master_buf[128] = {0};
+
+// 【修改点：分别为两个串口分配独立的缓冲区】
+uint16_t bms_modbus_master_buf[128] = {0};
+uint16_t sound_light_modbus_master_buf[128] = {0};
 
 // =========================================================
 // 1. 发送/控制 专用指令配置
@@ -72,7 +78,6 @@ void buzzer_logic(void)
 {
     // 1. 获取目标模式：3m 优先于 7m，0 为关闭。
     uint16_t raw_target_mode = 0;
-    // 【修改点 1】替换为 MB_Reg_Get
     if (MB_Reg_Get(CMD_BUZZER_3M) == 1)
     {
         raw_target_mode = 2;
@@ -127,7 +132,7 @@ void buzzer_logic(void)
         // 触发 3M 报警
         cmd_telegram.u16RegAdd = REG_SOUND_LIGHT_CTRL;
         cmd_payload = CMD_SOUND_3M;
-        ModbusQuery(&bms_sound_light_app, cmd_telegram);
+        ModbusQuery(&sound_light_app, cmd_telegram); // 【修改：使用 sound_light_app】
         err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
 
         if (err != OP_OK_QUERY)
@@ -149,7 +154,7 @@ void buzzer_logic(void)
         // 触发 7M 报警
         cmd_telegram.u16RegAdd = REG_SOUND_LIGHT_CTRL;
         cmd_payload = CMD_SOUND_7M;
-        ModbusQuery(&bms_sound_light_app, cmd_telegram);
+        ModbusQuery(&sound_light_app, cmd_telegram); // 【修改：使用 sound_light_app】
         err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
 
         if (err != OP_OK_QUERY)
@@ -168,10 +173,9 @@ void buzzer_logic(void)
     }
     else
     {
-        // 发送关闭命令（或者停止指令）收尾，确保寄存器状态归零
         cmd_telegram.u16RegAdd = REG_SOUND_STOP;
         cmd_payload = CMD_SOUND_STOP;
-        ModbusQuery(&bms_sound_light_app, cmd_telegram);
+        ModbusQuery(&sound_light_app, cmd_telegram); // 【修改：使用 sound_light_app】
         err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
 
         if (err != OP_OK_QUERY)
@@ -189,17 +193,16 @@ void buzzer_logic(void)
 // ========== 灯光通信处理逻辑 ==========
 void led_logic(void)
 {
-    static uint8_t led_timeout_count = 0; // 掉线错误计数器
+    static uint8_t led_timeout_count = 0; 
 
     uint16_t cmd_led_switch = MB_Reg_Get(CMD_LED_SWITCH);
     uint16_t status_led_switch = MB_Reg_Get(STATUS_LED_SWITCH);
     uint16_t current_err = MB_Reg_Get(REG_ERROR_CODE);
 
-    // 触发通信的条件：命令和状态不一致，或者（当前已经处于掉线状态，必须主动探测它是否恢复）
     if ((cmd_led_switch != status_led_switch) || (current_err & ERR_LED_OFFLINE))
     {
         cmd_telegram.u16RegAdd = REG_LED_CTRL;
-
+       
         // 根据主机想要的状态打包数据
         if (cmd_led_switch == 1)
         {
@@ -209,10 +212,10 @@ void led_logic(void)
         {
             cmd_payload = CMD_LED_OFF;
         }
-        ModbusQuery(&bms_sound_light_app, cmd_telegram);
+        
+        ModbusQuery(&sound_light_app, cmd_telegram); // 【修改：使用 sound_light_app】
         uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
 
-        // === 判定回复 ===
         if (err == OP_OK_QUERY)
         {
             LOGI("LED write success\n");
@@ -226,12 +229,10 @@ void led_logic(void)
                 MB_Reg_Set(REG_ERROR_CODE, err_led & ~ERR_LED_OFFLINE);
                 taskEXIT_CRITICAL();
             }
-
             led_timeout_count = 0;
         }
         else
         {
-            // 通信失败，累计错误（最高只加到 3）
             if (led_timeout_count < 3)
             {
                 led_timeout_count++;
@@ -262,13 +263,23 @@ void led_logic(void)
 
 void init_bms_alarm_module(void)
 {
-    extern UART_HandleTypeDef huart8;
+    // 【修改点：引用 UART6(电池) 和 UART7(灯) 】
+    extern UART_HandleTypeDef huart6;
+    extern UART_HandleTypeDef huart7;
+
     init_modbus_master(
-        &bms_sound_light_app,
-        &huart8,
-        modbus_master_buf,
-        sizeof(modbus_master_buf) / sizeof(modbus_master_buf[0]));
-    LOGI("bms sound light modbus master start \n");
+        &bms_app,
+        &huart6,
+        bms_modbus_master_buf,
+        sizeof(bms_modbus_master_buf) / sizeof(bms_modbus_master_buf[0]));
+    LOGI("BMS modbus master (USART6) start \n");
+
+    init_modbus_master(
+        &sound_light_app,
+        &huart7,
+        sound_light_modbus_master_buf,
+        sizeof(sound_light_modbus_master_buf) / sizeof(sound_light_modbus_master_buf[0]));
+    LOGI("Sound light modbus master (USART7) start \n");
 }
 
 void modbus_alarm_handle(void)
@@ -286,7 +297,7 @@ void modbus_alarm_handle(void)
     {
         cmd_telegram.u16RegAdd = REG_VOLUME_CTRL;
         cmd_payload = now_volume;
-        ModbusQuery(&bms_sound_light_app, cmd_telegram);
+        ModbusQuery(&sound_light_app, cmd_telegram); // 【修改：使用 sound_light_app】
         uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
         if (err == OP_OK_QUERY)
         {
@@ -302,8 +313,8 @@ void modbus_alarm_handle(void)
     if (xTaskGetTickCount() - last_500ms >= pdMS_TO_TICKS(500))
     {
         last_500ms = xTaskGetTickCount();
-        buzzer_logic(); // 调用内部的喇叭状态机
-        led_logic();    // 调用内部的LED处理
+        buzzer_logic(); 
+        led_logic();    
     }
 }
 
@@ -316,7 +327,7 @@ void modbus_bms_handle(void)
     {
         last_500ms += pdMS_TO_TICKS(500);
         // 采样放电时间
-        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_REMAIN_DISCHARGE]);
+        ModbusQuery(&bms_app, bms_read_telegrams[READ_REMAIN_DISCHARGE]);
         int err1 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
         if (err1 == OP_OK_QUERY)
         {
@@ -332,9 +343,7 @@ void modbus_bms_handle(void)
         else
         {
             LOGE("READ_REMAIN_DISCHARGE read fail : %d \n", err1);
-        }
-        // 读取保护状态
-        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_PROTECT_STATUS]);
+        }        ModbusQuery(&bms_app, bms_read_telegrams[READ_PROTECT_STATUS]);
         if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
         {
             MB_Reg_Set(STATUS_BMS_PROTECT_STATUS, bms_read_results[READ_PROTECT_STATUS]);
@@ -345,7 +354,7 @@ void modbus_bms_handle(void)
             LOGE("bms protect status modbus master read fail\n");
         }
         // 采样充电时间
-        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_REMAIN_CHARGE]);
+        ModbusQuery(&bms_app, bms_read_telegrams[READ_REMAIN_CHARGE]);
         int err2 = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
         if (err2 == OP_OK_QUERY)
         {
@@ -369,13 +378,11 @@ void modbus_bms_handle(void)
     {
         last_10s += pdMS_TO_TICKS(10000);
 
-        // 读取电量
-        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_BATT_LEVEL]);
+        ModbusQuery(&bms_app, bms_read_telegrams[READ_BATT_LEVEL]);
         if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
         {
             MB_Reg_Set(STATUS_BMS_BATTERY, bms_read_results[READ_BATT_LEVEL]);
-            LOGD("bms led sound modbus master read success,Battery = %d\n", bms_read_results[READ_BATT_LEVEL]);
-            // 读取成功，清除系统错误码
+            LOGD("bms read success,Battery = %d\n", bms_read_results[READ_BATT_LEVEL]);
             taskENTER_CRITICAL();
             uint16_t err_bms = MB_Reg_Get(REG_ERROR_CODE);
             MB_Reg_Set(REG_ERROR_CODE, err_bms & ~ERR_BMS_READ_FAIL);
@@ -383,7 +390,7 @@ void modbus_bms_handle(void)
         }
         else
         {
-            LOGE("bms led sound modbus master read fail  \n");
+            LOGE("bms read fail  \n");
             MB_Reg_Set(STATUS_BMS_BATTERY, 0);
             // 读取失败，设置系统错误码为BMS读取出错
             taskENTER_CRITICAL();
@@ -392,8 +399,7 @@ void modbus_bms_handle(void)
             taskEXIT_CRITICAL();
         }
 
-        // 读取总电压
-        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_TOTAL_VOLTAGE]);
+        ModbusQuery(&bms_app, bms_read_telegrams[READ_TOTAL_VOLTAGE]);
         if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
         {
             MB_Reg_Set(STATUS_BMS_TOTAL_VOLTAGE, bms_read_results[READ_TOTAL_VOLTAGE]);
@@ -404,8 +410,7 @@ void modbus_bms_handle(void)
             LOGE("bms total voltage modbus master read fail  \n");
         }
 
-        // 读取总电流及充放电状态
-        ModbusQuery(&bms_sound_light_app, bms_read_telegrams[READ_TOTAL_CURRENT]);
+        ModbusQuery(&bms_app, bms_read_telegrams[READ_TOTAL_CURRENT]);
         if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS)) == OP_OK_QUERY)
         {
             int16_t val = (int16_t)bms_read_results[READ_TOTAL_CURRENT];
@@ -482,14 +487,12 @@ void modbus_bms_handle(void)
 void power_on_self_test(void)
 {
     LOGI("[POST] System Power-On Self-Test started...\n");
-
-    // 1. 延时2500ms (等待 MCU 稳定运行)
     osDelay(2500);
 
     cmd_telegram.u16RegAdd = 0x2303;
     cmd_payload = 0x0001; // 数据位：播放物理顺序第 1 曲
 
-    ModbusQuery(&bms_sound_light_app, cmd_telegram);
+    ModbusQuery(&sound_light_app, cmd_telegram); // 【修改：使用 sound_light_app】
     uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
 
     if (err == OP_OK_QUERY)
@@ -504,7 +507,7 @@ void power_on_self_test(void)
     osDelay(5500); 
     cmd_telegram.u16RegAdd = 0x6003; 
     cmd_payload = 0x0000;            
-    ModbusQuery(&bms_sound_light_app, cmd_telegram);
+    ModbusQuery(&sound_light_app, cmd_telegram); // 【修改：使用 sound_light_app】
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
     // 4. 同步 Modbus 状态机寄存器，防止后续逻辑误判
     MB_Reg_Set(STATUS_LED_SWITCH, 0);

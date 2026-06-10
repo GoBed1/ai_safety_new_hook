@@ -10,13 +10,19 @@
 volatile uint8_t g_task_alive_flags = 0;
 extern UART_HandleTypeDef huart8;
 static modbusHandler_t modbus_rtu_server;
-
-
-osThreadId_t ai_safy_master_handle;
-const osThreadAttr_t ai_safy_master_attributes = {
-    .name = "AISafyMaster",
-    .stack_size = 1024 * 6,
+//爆闪灯线程任务
+osThreadId_t led_sound_master_handle;
+const osThreadAttr_t led_sound_master_attributes = {
+    .name = "LedSoundMaster",
+    .stack_size = 1024 * 4,
     .priority = (osPriority_t)osPriorityNormal1,
+};
+//bms读取线程任务
+osThreadId_t bms_master_handle;
+const osThreadAttr_t bms_master_attributes = {
+    .name = "BmsMaster",
+    .stack_size = 1024 * 4,
+    .priority = (osPriority_t)osPriorityNormal,
 };
 // gps待机线程
 osThreadId_t gps_standby_handle;
@@ -84,26 +90,34 @@ void init_ai_safy_slave(void) {
     ModbusInit(&modbus_rtu_server);
     ModbusStart(&modbus_rtu_server);
 }
-void ai_safy_master_thread(void *argument)
+void led_sound_master_thread(void *argument)
 {
     power_on_self_test(); // 电源上电自检
     for (;;)
     {
-        g_task_alive_flags |= TASK_AI_SAFY_ALIVE; // 看门狗打卡
+        // g_task_alive_flags |= TASK_AI_SAFY_ALIVE; // 看门狗打卡
         
         modbus_alarm_handle();  // 处理声光模块
+
+        osDelay(100); 
+    }
+}
+void bms_master_thread(void *argument)
+{
+    for (;;)
+    {
+        
         modbus_bms_handle();    // 处理 BMS 模块
 
         osDelay(100); 
     }
 }
-
 // 继电器心跳专用线程
 void relay_heartbeat_thread(void *argument)
 {
     for (;;)
     {
-        g_task_alive_flags |= TASK_RELAY_ALIVE; // 看门狗打卡
+        // g_task_alive_flags |= TASK_RELAY_ALIVE; // 看门狗打卡
         process_relay_logic();                  
         osDelay(100);                           
     }
@@ -115,7 +129,7 @@ void gps_standby_thread(void *argument)
     gps_rtc_app_init(); 
     for (;;)
     {
-        g_task_alive_flags |= TASK_GPS_ALIVE;
+        // g_task_alive_flags |= TASK_GPS_ALIVE;
         process_gps_logic();  
 
         osDelay(1000); 
@@ -151,7 +165,6 @@ void app_4g_thread(void *argument)
 }
 // 吊钩系统总初始化入口
 void init_app_hook_task() {
-    
     EventGroupCreate_Init();
     //启动本机的 Modbus 通信服务
     init_modbus_slave(&modbus_rtu_server, &huart8, FORWARD_SLAVE_ADDR);  
@@ -169,7 +182,8 @@ void init_app_hook_task() {
     MB_Reg_Set(REG_ERROR_CODE, 0x0000); 
     // 初始化心跳使能寄存器为1（默认开启心跳）
     MB_Reg_Set(HEARTBEAT_ENABLE, 1);
-    ai_safy_master_handle = osThreadNew(ai_safy_master_thread, NULL, &ai_safy_master_attributes);
+    led_sound_master_handle = osThreadNew(led_sound_master_thread, NULL, &led_sound_master_attributes);
+    bms_master_handle = osThreadNew(bms_master_thread, NULL, &bms_master_attributes);
     relay_heartbeat_handle = osThreadNew(relay_heartbeat_thread, NULL, &relay_heartbeat_attributes);
     gps_standby_handle = osThreadNew(gps_standby_thread, NULL, &gps_standby_attributes);
     sys_supervisor_handle = osThreadNew(sys_supervisor_thread, NULL, &sys_supervisor_attributes);
