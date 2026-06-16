@@ -218,7 +218,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
   if (huart == &huart1)
   {
-    printf("\r\n[DEBUG] UART1 RxEvent size: %d\r\n", size);
+    // printf("\r\n[DEBUG] UART1 RxEvent size: %d\r\n", size);
   }
 
   uart_inferface_t *m_obj = uart_manage_get_obj(huart);

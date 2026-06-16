@@ -5,7 +5,7 @@
 #include "app_bms_alarm.h"
 #include "app_sys_supervisor.h"
 #include "gps_app.h"
-#include "app_4G.h"
+//#include "app_4G.h"
 // ====== 看门狗标志位======
 volatile uint8_t g_task_alive_flags = 0;
 extern UART_HandleTypeDef huart8;

@@ -386,14 +386,14 @@ void parser_process_byte(ParserCtx_t *ctx, uint8_t byte)
 
             if (calc_crc == rcv_crc)
             {
-                // //打印查看接收到的完整帧内容
-                uint16_t total_len = 4 + ctx->data_len;
-                printf("[INFO] 4G Recv OK [%d Bytes]: ", total_len);
-                for (uint16_t i = 0; i < total_len; i++)
-                {
-                    printf("%02X ", calc_buf[i]);
-                }
-                printf("| CRC:%04X\n", rcv_crc);
+                // // //打印查看接收到的完整帧内容
+                // uint16_t total_len = 4 + ctx->data_len;
+                // printf("[INFO] 4G Recv OK [%d Bytes]: ", total_len);
+                // for (uint16_t i = 0; i < total_len; i++)
+                // {
+                //     printf("%02X ", calc_buf[i]);
+                // }
+                // printf("| CRC:%04X\n", rcv_crc);
 
                 Parser_FrameComplete(ctx);
             }

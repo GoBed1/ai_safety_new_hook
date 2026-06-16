@@ -706,21 +706,21 @@ void StartTaskModbusSlave(void *argument)
 
    }
     
-    char uart_str[8] = "unknown";
-    if(modH->port == &huart2){
-		strcpy(uart_str, "U2");
-	}else if(modH->port == &huart3){
-		strcpy(uart_str, "U3");
-	}else if(modH->port == &huart7){
-		strcpy(uart_str, "U7");
-	}else if(modH->port == &huart8){
-		strcpy(uart_str, "U8");
-	}
-	printf("[%s]R:",uart_str);
-    for (uint16_t i = 0; i < modH->u8BufferSize; i++) {
-        printf("%02X ", modH->u8Buffer[i]);
-    }
-    printf("\r\n");
+    // char uart_str[8] = "unknown";
+    // if(modH->port == &huart2){
+	// 	strcpy(uart_str, "U2");
+	// }else if(modH->port == &huart3){
+	// 	strcpy(uart_str, "U3");
+	// }else if(modH->port == &huart7){
+	// 	strcpy(uart_str, "U7");
+	// }else if(modH->port == &huart8){
+	// 	strcpy(uart_str, "U8");
+	// }
+	// printf("[%s]R:",uart_str);
+    // for (uint16_t i = 0; i < modH->u8BufferSize; i++) {
+    //     printf("%02X ", modH->u8Buffer[i]);
+    // }
+    // printf("\r\n");
 	
    if (modH->u8BufferSize < 7)
    {
@@ -1202,21 +1202,21 @@ void StartTaskModbusMaster(void *argument)
 
 #else
     getRxBuffer(modH);
-    char uart_str[8] = "unknown";
-    if(modH->port == &huart2){
-		strcpy(uart_str, "U2");
-	}else if(modH->port == &huart3){
-		strcpy(uart_str, "U3");
-	}else if(modH->port == &huart7){
-		strcpy(uart_str, "U7");
-	}else if(modH->port == &huart8){
-		strcpy(uart_str, "U8");
-	}
-	printf("[%s]R:",uart_str);
-	for (uint16_t i = 0; i < modH->u8BufferSize; i++) {
-		printf("%02X ", modH->u8Buffer[i]);
-	}
-	printf("\r\n");
+    // char uart_str[8] = "unknown";
+    // if(modH->port == &huart2){
+	// 	strcpy(uart_str, "U2");
+	// }else if(modH->port == &huart3){
+	// 	strcpy(uart_str, "U3");
+	// }else if(modH->port == &huart7){
+	// 	strcpy(uart_str, "U7");
+	// }else if(modH->port == &huart8){
+	// 	strcpy(uart_str, "U8");
+	// }
+	// printf("[%s]R:",uart_str);
+	// for (uint16_t i = 0; i < modH->u8BufferSize; i++) {
+	// 	printf("%02X ", modH->u8Buffer[i]);
+	// }
+	// printf("\r\n");
 #endif
 	// check buffer size，if too small, return error
 	  if ( modH->u8BufferSize < 6){

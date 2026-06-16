@@ -78,7 +78,7 @@ void process_relay_logic(void)
                 // 收到心跳，继电器引脚置为1 (上电)
                 HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
                 HAL_GPIO_WritePin(PWD_LED_GPIO_Port, PWD_LED_Pin, GPIO_PIN_SET);
-                LOGI("[Heartbeat] Host active. Relay 2 SET to 1. Reg[104]=%d\r\n", current_heartbeat);
+                // LOGI("[Heartbeat] Host active. Relay 2 SET to 1. Reg[104]=%d\r\n", current_heartbeat);
             }
             taskENTER_CRITICAL();
             uint16_t err_heart = MB_Reg_Get(REG_ERROR_CODE);
@@ -97,7 +97,7 @@ void process_relay_logic(void)
                 MB_Reg_Set(CMD_BUZZER_7M, 0);
                 MB_Reg_Set(CMD_BUZZER_3M, 0);
 
-                LOGE("[Heartbeat] Silence Timeout! Lights & Buzzer OFF \r\n");
+                // LOGE("[Heartbeat] Silence Timeout! Lights & Buzzer OFF \r\n");
             }
             // 如果没有变化，检查是否超时 1 分钟 (60000 毫秒)
             if ((xTaskGetTickCount() - recv_heartbeat_time) > pdMS_TO_TICKS(HEARTBEAT_TIMEOUT_MS) && relay_is_on == 1)
