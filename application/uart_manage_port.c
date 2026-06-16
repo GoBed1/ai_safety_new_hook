@@ -12,6 +12,8 @@
  * - 上位机向 USART1 发送 "abc"，应快速收到 "abc" 回显。
  */
 /* port.c */
+#include <string.h>
+
 #include "uart_manage.h"
 #include "Modbus.h"
 #include "app_4g.h"
@@ -50,13 +52,34 @@ static uint8_t uart5_send_buff[256U] DMA_BUFFER;
 static uint8_t uart5_send_fifo_buff[256U] DMA_BUFFER;
 static uint8_t uart5_process_buff[256U * 4U] DMA_BUFFER;
 
+static int32_t shell_at_reply_send(uint8_t *buf, uint16_t len)
+{
+  return uart_manage_dma_send_by_name("shell", buf, len);
+}
+
+static int32_t uart_4g_at_reply_send(uint8_t *buf, uint16_t len)
+{
+  uint8_t reply[258U];
+
+  if ((buf == NULL) || (len == 0U) || (len > (sizeof(reply) - 2U)))
+  {
+    return -1;
+  }
+
+  reply[0] = '1';
+  reply[1] = ',';
+  (void)memcpy(&reply[2], buf, len);
+
+  return uart_manage_dma_send_by_name("4g", reply, (uint16_t)(len + 2U));
+}
+
 // 【Shell (UART5) 收到数据 -> 转发给 4G (UART1)】
 static uint32_t shell_recv_callback(uint8_t *buf, uint16_t len)
 {
   printf("\r\n[DEBUG] Shell recv %d : %.*s\r\n", len, len, buf);
 
   //  craner 指令 ( OTA 指令.....)
-  if (craner_at_handler(buf, len, NULL) != AT_PREFIX_NOT_MATCH) // 匹配成功
+  if (craner_at_handler(buf, len, shell_at_reply_send) != AT_PREFIX_NOT_MATCH) // 匹配成功
   {
     return 0U; // 是 craner 的内部 AT 指令，拦截结束
   }
@@ -85,6 +108,11 @@ static uint32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
   {
     if (buf[0] == '1')
     {
+      if (craner_at_handler(&buf[2], len - 2U, uart_4g_at_reply_send) != AT_PREFIX_NOT_MATCH)
+      {
+        return 0U;
+      }
+
       usr_at_handler(&buf[2], len - 2);
       return 0U;
     }
@@ -193,7 +221,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  (void *)huart;
+  (void)huart;
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   /* Modbus RTU RX callback BEGIN */
   int i;
@@ -253,5 +281,5 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 {
-  (void *)huart;
+  (void)huart;
 }
