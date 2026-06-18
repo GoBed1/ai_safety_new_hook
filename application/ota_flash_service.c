@@ -296,6 +296,42 @@ ota_flash_status_t ota_flash_request_ota(ota_flash_slot_t target_slot)
   return ota_flash_write_meta(&meta);
 }
 
+ota_flash_status_t ota_flash_confirm_app(void)
+{
+  ota_flash_meta_t meta;
+  ota_flash_slot_t active_slot;
+  uint8_t active_index;
+
+  if (ota_flash_read_meta(&meta) != OTA_FLASH_OK)
+  {
+    return OTA_FLASH_ERR_META;
+  }
+
+  active_slot = (ota_flash_slot_t)meta.active_slot;
+  if (ota_flash_is_valid_slot(active_slot) == 0U)
+  {
+    return OTA_FLASH_ERR_META;
+  }
+
+  active_index = (active_slot == OTA_FLASH_SLOT_B) ? 1U : 0U;
+  if (meta.image[active_index].state == OTA_FLASH_IMAGE_VALID)
+  {
+    return OTA_FLASH_OK;
+  }
+
+  if (meta.image[active_index].state != OTA_FLASH_IMAGE_PENDING)
+  {
+    return OTA_FLASH_ERR_STATE;
+  }
+
+  meta.image[active_index].state = OTA_FLASH_IMAGE_VALID;
+  meta.boot_count = 0U;
+  meta.ota_request = OTA_FLASH_OTA_REQUEST_NONE;
+  meta.target_slot = OTA_FLASH_SLOT_NONE;
+
+  return ota_flash_write_meta(&meta);
+}
+
 uint32_t ota_flash_crc32_update(uint32_t crc, const uint8_t *data, uint32_t len)
 {
   if (data == NULL)

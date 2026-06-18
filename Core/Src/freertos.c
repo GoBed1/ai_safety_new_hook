@@ -25,7 +25,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include "ota_flash_service.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,7 +36,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define OTA_APP_CONFIRM_DELAY_SECONDS (30UL * 60UL)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,7 +46,12 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-
+osThreadId_t otaConfirmTaskHandle;
+const osThreadAttr_t otaConfirmTask_attributes = {
+  .name = "otaConfirmTask",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* USER CODE END Variables */
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -57,7 +63,7 @@ const osThreadAttr_t defaultTask_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
+void StartOtaConfirmTask(void *argument);
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
@@ -96,6 +102,7 @@ void MX_FREERTOS_Init(void) {
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+  otaConfirmTaskHandle = osThreadNew(StartOtaConfirmTask, NULL, &otaConfirmTask_attributes);
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -124,6 +131,38 @@ void StartDefaultTask(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+static uint32_t ota_confirm_delay_ticks(void)
+{
+  uint32_t tick_freq = osKernelGetTickFreq();
+
+  if (tick_freq == 0U)
+  {
+    return OTA_APP_CONFIRM_DELAY_SECONDS * 1000UL;
+  }
+
+  return OTA_APP_CONFIRM_DELAY_SECONDS * tick_freq;
+}
+
+void StartOtaConfirmTask(void *argument)
+{
+  ota_flash_status_t status;
+
+  (void)argument;
+
+  osDelay(ota_confirm_delay_ticks());
+
+  status = ota_flash_confirm_app();
+  if (status == OTA_FLASH_OK)
+  {
+    printf("[OTA][I] app confirmed after 30 minutes\r\n");
+  }
+  else
+  {
+    printf("[OTA][E] app confirm failed: %d\r\n", (int)status);
+  }
+
+  osThreadExit();
+}
 
 /* USER CODE END Application */
 

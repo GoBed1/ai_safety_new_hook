@@ -77,6 +77,7 @@ ota_flash_slot_t ota_flash_get_active_slot(void);
 ota_flash_slot_t ota_flash_get_inactive_slot(void);
 uint8_t ota_flash_is_valid_slot(ota_flash_slot_t slot);
 ota_flash_status_t ota_flash_request_ota(ota_flash_slot_t target_slot);
+ota_flash_status_t ota_flash_confirm_app(void);
 
 uint32_t ota_flash_crc32_update(uint32_t crc, const uint8_t *data, uint32_t len);
 uint32_t ota_flash_crc32_finish(uint32_t crc);
