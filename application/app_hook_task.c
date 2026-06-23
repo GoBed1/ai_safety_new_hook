@@ -154,11 +154,34 @@ void work_mode_thread(void *argument)
         osDelay(100); 
     }
 }
+
+static void send_hourly_4g_command(void)
+{
+    static TickType_t last_send_tick = 0U;
+    static const uint8_t keepalive_cmd[] = "usr.cn#AT+Z\r\n";
+    const TickType_t now = xTaskGetTickCount();
+    const TickType_t interval = pdMS_TO_TICKS(60U * 60U * 1000U);
+
+    if (last_send_tick == 0U)
+    {
+        last_send_tick = now;
+        return;
+    }
+
+    if ((TickType_t)(now - last_send_tick) >= interval)
+    {
+        (void)uart_manage_dma_send_by_name("4g", (uint8_t *)keepalive_cmd, (uint16_t)(sizeof(keepalive_cmd) - 1U));
+        last_send_tick = now;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+}
+
 void app_4g_thread(void *argument)
 {
     for (;;)
     {
         // g_task_alive_flags |= TASK_4G_ALIVE; 
+        send_hourly_4g_command();
         app_4g_update(); 
         osDelay(10); 
     }
