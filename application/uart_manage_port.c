@@ -16,6 +16,9 @@
 #include "Modbus.h"
 #include "app_4g.h"
 #include "at_protocol_handler.h"
+#include "ota_flash_service.h"
+#include "stm32h7xx_hal.h"
+#include <string.h>
 extern EventGroupHandle_t eg; // 初始化事件组为NULL
 
 #ifndef UART_MANAGE_RECV_RING_STATS_ENABLE
@@ -85,6 +88,49 @@ static uint32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
   {
     if (buf[0] == '1')
     {
+      /* check for special craner AT commands from 4G link */
+      uint8_t *p = &buf[2];
+      uint16_t plen = (uint16_t)(len - 2U);
+
+      /* "craner#AT+OTASTART=1" -> set OTA request to inactive slot and reboot */
+      if ((plen >= 20U) && (memcmp(p, "craner#AT+OTASTART=1", 20) == 0))
+      {
+        printf("[INFO] OTA command received: request OTA and rebooting...\r\n");
+        (void)ota_flash_request_ota(ota_flash_get_inactive_slot());
+        NVIC_SystemReset();
+        return 0U;
+      }
+
+      /* "craner#AT+OTALOCK=1" -> confirm current firmware (mark valid) */
+      if ((plen >= 18U) && (memcmp(p, "craner#AT+OTALOCK=1", 18) == 0))
+      {
+        ota_flash_meta_t meta;
+        if (ota_flash_read_meta(&meta) == OTA_FLASH_OK)
+        {
+          ota_flash_slot_t active = (ota_flash_slot_t)meta.active_slot;
+          uint8_t idx = (active == OTA_FLASH_SLOT_B) ? 1U : 0U;
+          meta.image[idx].state = OTA_FLASH_IMAGE_VALID;
+          meta.boot_count = 0U;
+          meta.ota_request = OTA_FLASH_OTA_REQUEST_NONE;
+          meta.target_slot = OTA_FLASH_SLOT_NONE;
+          if (ota_flash_write_meta(&meta) == OTA_FLASH_OK)
+          {
+            printf("[INFO] Firmware confirmed, will not rollback.\r\n");
+          }
+          else
+          {
+            printf("[ERROR] Firmware confirm failed (meta write).\r\n");
+          }
+        }
+        else
+        {
+          printf("[ERROR] Firmware confirm failed (meta read).\r\n");
+        }
+
+        return 0U;
+      }
+
+      /* other '1' prefixed payloads handled by existing AT parser */
       usr_at_handler(&buf[2], len - 2);
       return 0U;
     }
