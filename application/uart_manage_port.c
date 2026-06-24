@@ -12,13 +12,13 @@
  * - 上位机向 USART1 发送 "abc"，应快速收到 "abc" 回显。
  */
 /* port.c */
+#include "board_manage.h"
 #include "uart_manage.h"
 #include "Modbus.h"
 #include "app_4g.h"
 #include "at_protocol_handler.h"
-#include "ota_flash_service.h"
-#include "stm32h7xx_hal.h"
-#include <string.h>
+
+
 extern EventGroupHandle_t eg; // 初始化事件组为NULL
 
 #ifndef UART_MANAGE_RECV_RING_STATS_ENABLE
@@ -52,6 +52,21 @@ static uint8_t uart5_recv_buff[256U] DMA_BUFFER;
 static uint8_t uart5_send_buff[256U] DMA_BUFFER;
 static uint8_t uart5_send_fifo_buff[256U] DMA_BUFFER;
 static uint8_t uart5_process_buff[256U * 4U] DMA_BUFFER;
+
+int32_t shell_inform_send(uint8_t *buf, uint16_t len)
+{
+	(void)uart_manage_dma_send_by_name("shell", buf, len);
+	return 0U;
+}
+
+int32_t mqtt_inform_send(uint8_t *buf, uint16_t len)
+{
+	static const uint8_t prefix[] = "1,";
+	const uint16_t prefix_len = (uint16_t)(sizeof(prefix) - 1U);
+	(void)uart_manage_dma_send_by_name("4g", (uint8_t *)prefix, prefix_len);
+	(void)uart_manage_dma_send_by_name("4g", buf, len);
+	return 0U;
+}
 
 static int32_t shell_recv_callback(uint8_t *buf, uint16_t len)
 {

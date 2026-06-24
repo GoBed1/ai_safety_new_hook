@@ -1,7 +1,8 @@
-#include "board_manage.h"
-#include "ota_service_task.h"
+//#include "board_manage.h"
+//#include "ota_service_task.h"
 #include "at_protocol_handler.h"
 #include "stm32h7xx_hal.h"
+#include "ota_manage_port.h"
 #include "uart_manage_port.h"
 
 int32_t craner_at_handler(const uint8_t *buf, uint16_t len,at_reply_send_fn_t reply_fn)
@@ -38,9 +39,9 @@ int32_t craner_at_handler(const uint8_t *buf, uint16_t len,at_reply_send_fn_t re
 		tmp[tlen] = '\0';
 
 		/* Handle OTA START command */
-		if (strstr(tmp, "craner#AT+OTASTART") != NULL)
+		if (strstr(tmp, "craner#AT+OTABOOT") != NULL)
 		{
-			int ret = ota_start_transfer_callback();
+			int ret = ota_boot_callback();
 			if (ret == 0)
 			{
 				const char ack[] = "craner#OK\r\n";
@@ -54,23 +55,25 @@ int32_t craner_at_handler(const uint8_t *buf, uint16_t len,at_reply_send_fn_t re
 			}
 		}
 
-		/* Handle OTA RESET command: abort current session and clear OTA state */
-		if (strstr(tmp, "craner#AT+OTARESET") != NULL)
+		if (strstr(tmp, "craner#AT+OTALOCK") != NULL)
 		{
-			(void)ota_reset_transfer_callback();
+			int ret = ota_lock_callback();
+			if (ret == 0)
 			{
-				const char ok[] = "craner#OK\r\n";
-				(void)send_fn((uint8_t *)ok, (uint16_t)(sizeof(ok) - 1U));
+				const char ack[] = "craner#OK\r\n";
+				(void)send_fn((uint8_t *)ack, (uint16_t)(sizeof(ack) - 1U));
+				return AT_OK;
 			}
-			return AT_OK;
+			{
+				const char err[] = "craner#ERROR\r\n";
+				(void)send_fn((uint8_t *)err, (uint16_t)(sizeof(err) - 1U));
+				return AT_ACTION_EXECUTION_FAILED;
+			}
 		}
 
 		/* Handle system reset command */
 		if (strstr(tmp, "craner#AT+SYSRESET") != NULL)
 		{
-			const char ok[] = "craner#OK\r\n";
-			(void)send_fn((uint8_t *)ok, (uint16_t)(sizeof(ok) - 1U));
-			osDelay(100U);
 			NVIC_SystemReset();
 			return AT_OK;
 		}
