@@ -836,7 +836,7 @@ void ModbusQuery(modbusHandler_t * modH, modbus_t telegram )
 	}
 	else{
 		printf("Error: A slave cannot send queries as a master\n");
-		return ERR_NOT_MASTER;
+		return;
 	}
 }
 

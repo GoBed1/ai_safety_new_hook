@@ -72,6 +72,7 @@ typedef struct {
 
 // 外部接口
 void app_4G_init(void);
+void app_4g_update(void);
 void parser_process_byte(ParserCtx_t *ctx, uint8_t byte);
 
 #endif // APP_4G_H

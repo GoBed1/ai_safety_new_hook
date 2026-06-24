@@ -173,6 +173,7 @@ void print_internal_rtc_time(void)
 
     // 将 RTC 的 UTC 时间转换为北京时间 (UTC+8)
     uint8_t beijing_h = (sTime.Hours + 8) % 24;
+    (void)beijing_h;
 
     LOGI("is real write into internal RTC: 20%02u-%02u-%02u %02u:%02u:%02u | Beijing Time: %02u:%02u:%02u\r\n",
          sDate.Year, sDate.Month, sDate.Date,
@@ -191,8 +192,6 @@ void gps_sync_rtc_once(void)
     }
 
     RTC_TimeTypeDef sTime = {0};
-    RTC_DateTypeDef sDate = {0};
-
     sTime.Hours = g_nmea_gnss.time_h;
     sTime.Minutes = g_nmea_gnss.time_m;
     sTime.Seconds = g_nmea_gnss.time_s;

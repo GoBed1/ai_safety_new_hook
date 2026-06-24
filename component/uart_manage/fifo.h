@@ -35,7 +35,7 @@
 #ifndef __FIFO_H__
 #define __FIFO_H__
 #ifdef __cplusplus
-extern "C"
+"C"
 {
 #endif
 
@@ -43,6 +43,7 @@ extern "C"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include "stm32h7xx.h"
 
     //******************************************************************************************
     //!                           CONFIGURE MACRO
@@ -51,11 +52,14 @@ extern "C"
 #define FIFO_NDEBUG
 #define USE_DYNAMIC_MEMORY //!< Use system malloc/free function
 
-#include "board.h"
-
     //******************************************************************************************
     //!                     Macro Function
     //******************************************************************************************
+
+    #define MUTEX_DECLARE(mutex) unsigned long mutex
+    #define MUTEX_INIT(mutex)    do{mutex = 0;}while(0)
+    #define MUTEX_LOCK(mutex)    do{__disable_irq();}while(0)
+    #define MUTEX_UNLOCK(mutex)  do{__enable_irq();}while(0)
 
     //******************************************************************************************
     //!                           PUBLIC TYPE

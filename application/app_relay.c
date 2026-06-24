@@ -97,7 +97,7 @@ void process_relay_logic(void)
                 MB_Reg_Set(CMD_BUZZER_7M, 0);
                 MB_Reg_Set(CMD_BUZZER_3M, 0);
 
-                LOGE("[Heartbeat] Silence Timeout! Lights & Buzzer OFF \r\n");
+                // LOGE("[Heartbeat] Silence Timeout! Lights & Buzzer OFF \r\n");
             }
             // 如果没有变化，检查是否超时 1 分钟 (60000 毫秒)
             if ((xTaskGetTickCount() - recv_heartbeat_time) > pdMS_TO_TICKS(HEARTBEAT_TIMEOUT_MS) && relay_is_on == 1)

@@ -45,8 +45,6 @@
 #define ASSERT(x)                                           \
     do                                                      \
     {                                                       \
-        if (!(x))                                           \
-            printf("[assert]: %s, %d", __FILE__, __LINE__); \
         while (!(x))                                        \
             ;                                               \
     } while (0)
