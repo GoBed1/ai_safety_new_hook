@@ -53,91 +53,68 @@ static uint8_t uart5_send_buff[256U] DMA_BUFFER;
 static uint8_t uart5_send_fifo_buff[256U] DMA_BUFFER;
 static uint8_t uart5_process_buff[256U * 4U] DMA_BUFFER;
 
-// 【Shell (UART5) 收到数据 -> 转发给 4G (UART1)】
-static uint32_t shell_recv_callback(uint8_t *buf, uint16_t len)
+static int32_t shell_recv_callback(uint8_t *buf, uint16_t len)
 {
-  printf("\r\n[DEBUG] Shell recv %d : %.*s\r\n", len, len, buf);
+	int32_t ret;
 
-  //  craner 指令 ( OTA 指令.....)
-  if (craner_at_handler(buf, len, NULL) != AT_PREFIX_NOT_MATCH) // 匹配成功
-  {
-    return 0U; // 是 craner 的内部 AT 指令，拦截结束
-  }
+	/* AT command packets should be consumed immediately after a prefix match. */
+	ret = craner_at_handler(buf, len, shell_inform_send);
+	if (ret != AT_PREFIX_NOT_MATCH)
+	{
+		return (ret < 0) ? -1 : 0;
+	}
 
-  // 识别本地敲的真实 AT 指令
-  if (len >= 2 && (buf[0] == 'A' || buf[0] == 'a') && (buf[1] == 'T' || buf[1] == 't'))
-  {
-    usr_at_handler(buf, len);
-    return 0U;
-  }
+	ret = usr_at_handler(buf, len);
+	if (ret != AT_PREFIX_NOT_MATCH)
+	{
+		return (ret < 0) ? -1 : 0;
+	}
 
-  // 转发给 4G 模组
-  (void)uart_manage_dma_send_by_name("4g", buf, len);
-
-  return 0U;
+	{
+		static const uint8_t prefix[] = "[SHELL] ";
+		const uint16_t prefix_len = (uint16_t)(sizeof(prefix) - 1U);
+		(void)uart_manage_dma_send_by_name("shell", (uint8_t *)prefix, prefix_len);
+		(void)uart_manage_dma_send_by_name("shell", buf, len);
+		return 0U;
+	}
 }
-extern ParserCtx_t g_parser_ctx;                                 // 4G数据解析上下文
-extern void parser_process_byte(ParserCtx_t *ctx, uint8_t byte); // 4G数据逐字节解析函数
-static uint32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
-{
-  if ((buf == NULL) || (len == 0U))
-    return 0U;
 
-  // 1. 如果确认是前缀 (长度>=2且带有',')
+static int32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
+{
+	if ((buf == NULL) || (len == 0U))
+	{
+		return -1;
+	}
+
   if ((len >= 2U) && (buf[1] == ','))
   {
+    int32_t ret;
+
     if (buf[0] == '1')
     {
-      /* check for special craner AT commands from 4G link */
-      uint8_t *p = &buf[2];
-      uint16_t plen = (uint16_t)(len - 2U);
-
-      /* "craner#AT+OTASTART=1" -> set OTA request to inactive slot and reboot */
-      if ((plen >= 20U) && (memcmp(p, "craner#AT+OTASTART=1", 20) == 0))
+      ret = craner_at_handler(&buf[2], (uint16_t)(len - 2U), mqtt_inform_send);
+      if (ret != AT_PREFIX_NOT_MATCH)
       {
-        printf("[INFO] OTA command received: request OTA and rebooting...\r\n");
-        (void)ota_flash_request_ota(ota_flash_get_inactive_slot());
-        NVIC_SystemReset();
-        return 0U;
+        return (ret < 0) ? -1 : 0;
       }
 
-      /* "craner#AT+OTALOCK=1" -> confirm current firmware (mark valid) */
-      if ((plen >= 18U) && (memcmp(p, "craner#AT+OTALOCK=1", 18) == 0))
+      ret = usr_at_handler(&buf[2], (uint16_t)(len - 2U));
+      if (ret != AT_PREFIX_NOT_MATCH)
       {
-        ota_flash_meta_t meta;
-        if (ota_flash_read_meta(&meta) == OTA_FLASH_OK)
-        {
-          ota_flash_slot_t active = (ota_flash_slot_t)meta.active_slot;
-          uint8_t idx = (active == OTA_FLASH_SLOT_B) ? 1U : 0U;
-          meta.image[idx].state = OTA_FLASH_IMAGE_VALID;
-          meta.boot_count = 0U;
-          meta.ota_request = OTA_FLASH_OTA_REQUEST_NONE;
-          meta.target_slot = OTA_FLASH_SLOT_NONE;
-          if (ota_flash_write_meta(&meta) == OTA_FLASH_OK)
-          {
-            printf("[INFO] Firmware confirmed, will not rollback.\r\n");
-          }
-          else
-          {
-            printf("[ERROR] Firmware confirm failed (meta write).\r\n");
-          }
-        }
-        else
-        {
-          printf("[ERROR] Firmware confirm failed (meta read).\r\n");
-        }
-
-        return 0U;
+        return (ret < 0) ? -1 : 0;
       }
-
-      /* other '1' prefixed payloads handled by existing AT parser */
-      usr_at_handler(&buf[2], len - 2);
       return 0U;
     }
-    else if (buf[0] == '3' || buf[0] == '4')
+
+    if (buf[0] == '2')
     {
-      // 剥离前缀，把有效负荷扔进 RingBuffer
-      uart_manage_write_to_recv_ring(uart_manage_get_obj_by_name("4g"), &buf[2], len - 2);
+      return 0U;
+    }
+
+    if ((buf[0] == '3') || (buf[0] == '4'))
+    {
+      /* 剥离前缀，把有效负荷扔进 RingBuffer */
+      uart_manage_write_to_recv_ring(uart_manage_get_obj_by_name("4g"), &buf[2], (uint16_t)(len - 2U));
       return 0U;
     }
   }

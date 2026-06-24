@@ -16,8 +16,8 @@ extern "C" {
 
 #include "uart_manage_port.h"
 
-typedef uint32_t (*interface_send_fn_t)(uint8_t *buf, uint16_t len);
-typedef uint32_t (*interface_recv_fn_t)(uint8_t *buf, uint16_t len);
+typedef int32_t (*interface_send_fn_t)(uint8_t *buf, uint16_t len);
+typedef int32_t (*interface_recv_fn_t)(uint8_t *buf, uint16_t len);
 
 #define UART_MANAGE_MAX_OBJECTS 8U
 
