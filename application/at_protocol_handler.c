@@ -161,6 +161,7 @@ static int32_t craner_cmd_ota_info(const uint8_t *cmd, uint16_t len, at_reply_se
 	char info[48];
 	uint32_t active_slot;
 	uint32_t ota_request;
+	uint32_t need_confirm;
 	uint32_t rollback_count;
 	uint32_t rollback_threshold;
 	int info_len;
@@ -168,7 +169,7 @@ static int32_t craner_cmd_ota_info(const uint8_t *cmd, uint16_t len, at_reply_se
 	(void)cmd;
 	(void)len;
 
-	if (ota_get_info(&active_slot, &ota_request, &rollback_count, &rollback_threshold) != 0)
+	if (ota_get_info(&active_slot, &ota_request, &need_confirm, &rollback_count, &rollback_threshold) != 0)
 	{
 		craner_reply_cmd_error(reply_fn, cmd, len);
 		return AT_ACTION_EXECUTION_FAILED;
@@ -176,9 +177,10 @@ static int32_t craner_cmd_ota_info(const uint8_t *cmd, uint16_t len, at_reply_se
 
 	info_len = snprintf(info,
 	                    sizeof(info),
-	                    "craner#+OTAINFO:%lu,%lu,%lu,%lu\r\n",
-	                    (unsigned long)active_slot,
+	                    "craner#+OTAINFO:%lu,%lu,%lu,%lu,%lu\r\n",
 	                    (unsigned long)ota_request,
+	                    (unsigned long)active_slot,
+	                    (unsigned long)need_confirm,
 	                    (unsigned long)rollback_count,
 	                    (unsigned long)rollback_threshold);
 	if ((info_len <= 0) || ((uint32_t)info_len >= sizeof(info)))

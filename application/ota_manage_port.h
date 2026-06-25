@@ -52,6 +52,7 @@ int ota_cancel_callback(void);
 int ota_lock_callback(void);
 int ota_get_info(uint32_t *active_slot,
                  uint32_t *ota_request,
+                 uint32_t *need_confirm,
                  uint32_t *rollback_count,
                  uint32_t *rollback_threshold);
 

@@ -352,13 +352,16 @@ int ota_lock_callback(void)
 
 int ota_get_info(uint32_t *active_slot,
                  uint32_t *ota_request,
+                 uint32_t *need_confirm,
                  uint32_t *rollback_count,
                  uint32_t *rollback_threshold)
 {
   ota_flash_meta_t meta;
+  uint8_t active_index;
 
   if ((active_slot == NULL) ||
       (ota_request == NULL) ||
+      (need_confirm == NULL) ||
       (rollback_count == NULL) ||
       (rollback_threshold == NULL))
   {
@@ -370,8 +373,10 @@ int ota_get_info(uint32_t *active_slot,
     ota_flash_make_default_meta(&meta);
   }
 
+  active_index = ota_slot_index(meta.active_slot);
   *active_slot = meta.active_slot;
   *ota_request = meta.ota_request;
+  *need_confirm = (meta.image[active_index].state == OTA_FLASH_IMAGE_PENDING) ? 1U : 0U;
   *rollback_count = meta.boot_count;
   *rollback_threshold = OTA_FLASH_CONFIRM_MAX_ATTEMPTS;
 
