@@ -85,7 +85,7 @@ int32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
     }
   }
 
-  (void)uart_manage_write_to_recv_ring(uart_manage_get_obj_by_name("4g"), buf, len);
+  // (void)uart_manage_write_to_recv_ring(uart_manage_get_obj_by_name("4g"), buf, len);
 
   static const uint8_t prefix[] = "[ERR]4G:";
   const uint16_t prefix_len = (uint16_t)(sizeof(prefix) - 1U);
