@@ -2,6 +2,7 @@
 
 #include "at_protocol_handler.h"
 #include "uart_manage.h"
+#include <string.h>
 
 int32_t shell_inform_send(uint8_t *buf, uint16_t len)
 {
@@ -85,12 +86,16 @@ int32_t uart_4g_recv_callback(uint8_t *buf, uint16_t len)
     }
   }
 
-  // (void)uart_manage_write_to_recv_ring(uart_manage_get_obj_by_name("4g"), buf, len);
+  if ((len >= 7U) && (memcmp(buf, "usr.cn#", 7U) == 0))
+  {
+    const uint8_t *payload = &buf[7];
+    uint16_t payload_len = (uint16_t)(len - 7U);
 
-  static const uint8_t prefix[] = "[ERR]4G:";
-  const uint16_t prefix_len = (uint16_t)(sizeof(prefix) - 1U);
-  (void)uart_manage_dma_send_by_name("shell", prefix, prefix_len);
-  (void)uart_manage_dma_send_by_name("shell", buf, len);
+    (void)shell_inform_send((uint8_t *)payload, payload_len);
+    (void)mqtt_inform_send((uint8_t *)payload, payload_len);
+    return UART_MANAGE_OK;
+  }
 
+  (void)uart_manage_write_to_recv_ring(uart_manage_get_obj_by_name("4g"), buf, len);
   return UART_MANAGE_OK;
 }
