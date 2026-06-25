@@ -350,12 +350,17 @@ int ota_lock_callback(void)
   return 0;
 }
 
-int ota_get_info(uint32_t *active_slot, uint32_t *ota_request, uint32_t *rollback_remain_count)
+int ota_get_info(uint32_t *active_slot,
+                 uint32_t *ota_request,
+                 uint32_t *rollback_count,
+                 uint32_t *rollback_threshold)
 {
   ota_flash_meta_t meta;
-  uint32_t boot_count;
 
-  if ((active_slot == NULL) || (ota_request == NULL) || (rollback_remain_count == NULL))
+  if ((active_slot == NULL) ||
+      (ota_request == NULL) ||
+      (rollback_count == NULL) ||
+      (rollback_threshold == NULL))
   {
     return -1;
   }
@@ -365,15 +370,10 @@ int ota_get_info(uint32_t *active_slot, uint32_t *ota_request, uint32_t *rollbac
     ota_flash_make_default_meta(&meta);
   }
 
-  boot_count = meta.boot_count;
-  if (boot_count > OTA_FLASH_CONFIRM_MAX_ATTEMPTS)
-  {
-    boot_count = OTA_FLASH_CONFIRM_MAX_ATTEMPTS;
-  }
-
   *active_slot = meta.active_slot;
   *ota_request = meta.ota_request;
-  *rollback_remain_count = OTA_FLASH_CONFIRM_MAX_ATTEMPTS - boot_count;
+  *rollback_count = meta.boot_count;
+  *rollback_threshold = OTA_FLASH_CONFIRM_MAX_ATTEMPTS;
 
   return 0;
 }

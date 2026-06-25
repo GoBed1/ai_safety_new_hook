@@ -23,7 +23,7 @@
 
 #define OTA_FLASH_OTA_REQUEST_NONE          0U
 #define OTA_FLASH_OTA_REQUEST_UPDATE        1U
-#define OTA_FLASH_CONFIRM_MAX_ATTEMPTS      3UL
+#define OTA_FLASH_CONFIRM_MAX_ATTEMPTS      10UL
 
 typedef struct
 {
@@ -50,6 +50,9 @@ int ota_boot_callback(void);
 int ota_request_callback(void);
 int ota_cancel_callback(void);
 int ota_lock_callback(void);
-int ota_get_info(uint32_t *active_slot, uint32_t *ota_request, uint32_t *rollback_remain_count);
+int ota_get_info(uint32_t *active_slot,
+                 uint32_t *ota_request,
+                 uint32_t *rollback_count,
+                 uint32_t *rollback_threshold);
 
 #endif
