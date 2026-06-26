@@ -55,7 +55,7 @@ extern "C" {
  * \brief           Atomic type for size variable.
  * Default value is set to be `unsigned 32-bits` type
  */
-typedef uint32_t lwrb_sz_atomic_t;
+typedef atomic_ulong lwrb_sz_atomic_t;
 
 /**
  * \brief           Size variable for all library operations.

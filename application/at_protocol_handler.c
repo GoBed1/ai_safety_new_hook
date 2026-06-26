@@ -3,17 +3,256 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "ota_flash_service.h"
 #include "stm32h7xx_hal.h"
+#include "ota_manage_port.h"
 #include "uart_manage.h"
+#include "uart_manage_port.h"
 
-#define CRANER_AT_PREFIX        "craner#AT"
-#define CRANER_OTA_REQUEST_CMD  "craner#AT+OTA=1"
-#define CRANER_REPLY_OK         "craner#OK\r\n"
-#define CRANER_REPLY_ERROR      "craner#ERROR\r\n"
+typedef int32_t (*craner_cmd_handler_t)(const uint8_t *cmd, uint16_t len, at_reply_send_fn_t reply_fn);
 
-static uint16_t at_skip_space(const uint8_t *buf, uint16_t len, uint16_t index)
+typedef struct
 {
+	const char *cmd;
+	craner_cmd_handler_t handler;
+} craner_cmd_entry_t;
+
+typedef struct
+{
+	const uint8_t *full_cmd;
+	uint16_t full_cmd_len;
+	const uint8_t *cmd;
+	uint16_t cmd_len;
+} craner_at_command_t;
+
+static uint8_t craner_is_blank(uint8_t ch)
+{
+	return (uint8_t)((ch == ' ') || (ch == '\t') || (ch == '\r') || (ch == '\n'));
+}
+
+static int32_t craner_find_at_command(const uint8_t *buf, uint16_t len, craner_at_command_t *at_cmd)
+{
+	static const char craner_prefix[] = "craner#";
+	const uint16_t craner_prefix_len = (uint16_t)(sizeof(craner_prefix) - 1U);
+	uint16_t index = 0U;
+	uint16_t full_cmd_len;
+
+	if ((buf == NULL) || (at_cmd == NULL))
+	{
+		return AT_PREFIX_NOT_MATCH;
+	}
+
+	while ((index < len) && (craner_is_blank(buf[index]) != 0U))
+	{
+		index++;
+	}
+
+	if ((len - index) < craner_prefix_len)
+	{
+		return AT_PREFIX_NOT_MATCH;
+	}
+
+	if (memcmp(&buf[index], craner_prefix, craner_prefix_len) != 0)
+	{
+		return AT_PREFIX_NOT_MATCH;
+	}
+
+	full_cmd_len = (uint16_t)(len - index);
+	while ((full_cmd_len > craner_prefix_len) &&
+	       (craner_is_blank(buf[index + full_cmd_len - 1U]) != 0U))
+	{
+		full_cmd_len--;
+	}
+
+	at_cmd->full_cmd = &buf[index];
+	at_cmd->full_cmd_len = full_cmd_len;
+	at_cmd->cmd = &buf[index + craner_prefix_len];
+	at_cmd->cmd_len = (uint16_t)(full_cmd_len - craner_prefix_len);
+
+	return AT_OK;
+}
+
+static void craner_reply_ok(at_reply_send_fn_t reply_fn)
+{
+	const char ack[] = "craner#OK\r\n";
+	(void)reply_fn((uint8_t *)ack, (uint16_t)(sizeof(ack) - 1U));
+}
+
+static void craner_reply_error(at_reply_send_fn_t reply_fn)
+{
+	const char err[] = "craner#ERROR\r\n";
+	(void)reply_fn((uint8_t *)err, (uint16_t)(sizeof(err) - 1U));
+}
+
+static void craner_reply_cmd_error(at_reply_send_fn_t reply_fn, const uint8_t *cmd, uint16_t len)
+{
+	const char prefix[] = "craner#";
+	const char suffix[] = " ERROR\r\n";
+
+	(void)reply_fn((uint8_t *)prefix, (uint16_t)(sizeof(prefix) - 1U));
+	if ((len > 2U) && (cmd[0] == 'A') && (cmd[1] == 'T'))
+	{
+		(void)reply_fn((uint8_t *)&cmd[2], (uint16_t)(len - 2U));
+	}
+	else
+	{
+		(void)reply_fn((uint8_t *)cmd, len);
+	}
+	(void)reply_fn((uint8_t *)suffix, (uint16_t)(sizeof(suffix) - 1U));
+}
+
+static int32_t craner_cmd_at(const uint8_t *cmd, uint16_t len, at_reply_send_fn_t reply_fn)
+{
+	(void)cmd;
+	(void)len;
+	craner_reply_ok(reply_fn);
+	return AT_OK;
+}
+
+static int32_t craner_cmd_ota_boot(const uint8_t *cmd, uint16_t len, at_reply_send_fn_t reply_fn)
+{
+	if (ota_boot_callback() == 0)
+	{
+		craner_reply_ok(reply_fn);
+		return AT_OK;
+	}
+
+	craner_reply_cmd_error(reply_fn, cmd, len);
+	return AT_ACTION_EXECUTION_FAILED;
+}
+
+static int32_t craner_cmd_ota_request(const uint8_t *cmd, uint16_t len, at_reply_send_fn_t reply_fn)
+{
+	if (ota_request_callback() == 0)
+	{
+		craner_reply_ok(reply_fn);
+		return AT_OK;
+	}
+
+	craner_reply_cmd_error(reply_fn, cmd, len);
+	return AT_ACTION_EXECUTION_FAILED;
+}
+
+static int32_t craner_cmd_ota_cancel(const uint8_t *cmd, uint16_t len, at_reply_send_fn_t reply_fn)
+{
+	if (ota_cancel_callback() == 0)
+	{
+		craner_reply_ok(reply_fn);
+		return AT_OK;
+	}
+
+	craner_reply_cmd_error(reply_fn, cmd, len);
+	return AT_ACTION_EXECUTION_FAILED;
+}
+
+static int32_t craner_cmd_ota_lock(const uint8_t *cmd, uint16_t len, at_reply_send_fn_t reply_fn)
+{
+	if (ota_lock_callback() == 0)
+	{
+		craner_reply_ok(reply_fn);
+		return AT_OK;
+	}
+
+	craner_reply_cmd_error(reply_fn, cmd, len);
+	return AT_ACTION_EXECUTION_FAILED;
+}
+
+static int32_t craner_cmd_ota_info(const uint8_t *cmd, uint16_t len, at_reply_send_fn_t reply_fn)
+{
+	char info[48];
+	uint32_t active_slot;
+	uint32_t ota_request;
+	uint32_t need_confirm;
+	uint32_t rollback_count;
+	uint32_t rollback_threshold;
+	int info_len;
+
+	(void)cmd;
+	(void)len;
+
+	if (ota_get_info(&active_slot, &ota_request, &need_confirm, &rollback_count, &rollback_threshold) != 0)
+	{
+		craner_reply_cmd_error(reply_fn, cmd, len);
+		return AT_ACTION_EXECUTION_FAILED;
+	}
+
+	info_len = snprintf(info,
+	                    sizeof(info),
+	                    "craner#+OTAINFO:%lu,%lu,%lu,%lu,%lu\r\n",
+	                    (unsigned long)ota_request,
+	                    (unsigned long)active_slot,
+	                    (unsigned long)need_confirm,
+	                    (unsigned long)rollback_count,
+	                    (unsigned long)rollback_threshold);
+	if ((info_len <= 0) || ((uint32_t)info_len >= sizeof(info)))
+	{
+		craner_reply_cmd_error(reply_fn, cmd, len);
+		return AT_ACTION_EXECUTION_FAILED;
+	}
+
+	(void)reply_fn((uint8_t *)info, (uint16_t)info_len);
+	return AT_OK;
+}
+
+static int32_t craner_cmd_fw_time(const uint8_t *cmd, uint16_t len, at_reply_send_fn_t reply_fn)
+{
+	static const char fw_time[] = "craner#FWTIME:" __DATE__ " " __TIME__ "\r\n";
+
+	(void)cmd;
+	(void)len;
+	(void)reply_fn((uint8_t *)fw_time, (uint16_t)(sizeof(fw_time) - 1U));
+	return AT_OK;
+}
+
+static int32_t craner_cmd_sys_reset(const uint8_t *cmd, uint16_t len, at_reply_send_fn_t reply_fn)
+{
+	(void)cmd;
+	(void)len;
+	(void)reply_fn;
+	NVIC_SystemReset();
+	return AT_OK;
+}
+
+static const craner_cmd_entry_t craner_cmd_table[] = {
+	{"AT", craner_cmd_at},
+	{"AT+OTABOOT", craner_cmd_ota_boot},
+	{"AT+OTAREQUEST", craner_cmd_ota_request},
+	{"AT+OTACANCEL", craner_cmd_ota_cancel},
+	{"AT+OTALOCK", craner_cmd_ota_lock},
+	{"AT+OTAINFO", craner_cmd_ota_info},
+	{"AT+FWTIME", craner_cmd_fw_time},
+	{"AT+SYSRESET", craner_cmd_sys_reset},
+};
+
+int32_t craner_at_handler(const uint8_t *buf, uint16_t len,at_reply_send_fn_t reply_fn)
+{
+	at_reply_send_fn_t send_fn = (reply_fn != NULL) ? reply_fn : shell_inform_send;
+	craner_at_command_t at_cmd;
+
+	if (craner_find_at_command(buf, len, &at_cmd) != AT_OK)
+	{
+		return AT_PREFIX_NOT_MATCH;
+	}
+
+	for (uint16_t i = 0U; i < (uint16_t)(sizeof(craner_cmd_table) / sizeof(craner_cmd_table[0])); ++i)
+	{
+		uint16_t table_cmd_len = (uint16_t)strlen(craner_cmd_table[i].cmd);
+		if ((at_cmd.cmd_len == table_cmd_len) && (memcmp(at_cmd.cmd, craner_cmd_table[i].cmd, table_cmd_len) == 0))
+		{
+			return craner_cmd_table[i].handler(at_cmd.cmd, at_cmd.cmd_len, send_fn);
+		}
+	}
+
+	craner_reply_error(send_fn);
+
+	return AT_UNKNOWN_CMD;
+}
+
+int32_t usr_at_handler(const uint8_t *buf, uint16_t len)
+{
+	static const char at_prefix[] = "usr.cn#AT";
+	const uint16_t at_prefix_len = (uint16_t)(sizeof(at_prefix) - 1U);
+	uint16_t index = 0U;
+
 	while (index < len)
 	{
 		if ((buf[index] != ' ') && (buf[index] != '\t') &&
@@ -24,180 +263,26 @@ static uint16_t at_skip_space(const uint8_t *buf, uint16_t len, uint16_t index)
 		index++;
 	}
 
-	return index;
-}
-
-static uint8_t at_payload_equals(const uint8_t *buf, uint16_t len, const char *cmd)
-{
-	uint16_t cmd_len;
-
-	if ((buf == NULL) || (cmd == NULL))
-	{
-		return 0U;
-	}
-
-	cmd_len = (uint16_t)strlen(cmd);
-	if (len < cmd_len)
-	{
-		return 0U;
-	}
-
-	if (memcmp(buf, cmd, cmd_len) != 0)
-	{
-		return 0U;
-	}
-
-	for (uint16_t i = cmd_len; i < len; ++i)
-	{
-		if ((buf[i] != ' ') && (buf[i] != '\t') &&
-			(buf[i] != '\r') && (buf[i] != '\n'))
-		{
-			return 0U;
-		}
-	}
-
-	return 1U;
-}
-
-static void at_send_reply(at_reply_send_fn_t send_fn, const char *reply)
-{
-	if ((send_fn != NULL) && (reply != NULL))
-	{
-		(void)send_fn((uint8_t *)reply, (uint16_t)strlen(reply));
-	}
-}
-
-static int32_t craner_request_ota_update(void)
-{
-	ota_flash_slot_t target_slot;
-	ota_flash_status_t status;
-
-	status = ota_flash_service_init();
-	if (status != OTA_FLASH_OK)
-	{
-		printf("[OTA][E] flash service init failed: %d\r\n", (int)status);
-		return AT_ACTION_EXECUTION_FAILED;
-	}
-
-	target_slot = ota_flash_get_inactive_slot();
-	status = ota_flash_request_ota(target_slot);
-	if (status != OTA_FLASH_OK)
-	{
-		printf("[OTA][E] request ota failed: slot=%d status=%d\r\n", (int)target_slot, (int)status);
-		return AT_ACTION_EXECUTION_FAILED;
-	}
-
-	printf("[OTA][I] request ota ok: target_slot=%d\r\n", (int)target_slot);
-	return AT_OK;
-}
-
-int32_t craner_at_handler(const uint8_t *buf, uint16_t len,at_reply_send_fn_t reply_fn)
-{
-	const uint16_t at_prefix_len = (uint16_t)(sizeof(CRANER_AT_PREFIX) - 1U);
-	uint16_t index = 0U;
-
-	if ((buf == NULL) || (len == 0U))
-	{
-		return AT_PREFIX_NOT_MATCH;
-	}
-
-	/* Skip leading whitespace */
-	index = at_skip_space(buf, len, index);
-
-	/* The 4G/MQTT text channel prefixes normal AT payloads with "1,". */
-	if (((uint16_t)(len - index) >= 2U) && (buf[index] == '1') && (buf[index + 1U] == ','))
-	{
-		index += 2U;
-		index = at_skip_space(buf, len, index);
-	}
-
-	/* Check if remaining length is sufficient */
 	if ((len - index) < at_prefix_len)
 	{
 		return AT_PREFIX_NOT_MATCH;
 	}
 
-	/* Compare prefix */
-	if (memcmp(&buf[index], CRANER_AT_PREFIX, at_prefix_len) == 0)
+	if (memcmp(&buf[index], at_prefix, at_prefix_len) == 0)
 	{
-		const uint8_t *payload = &buf[index];
-		uint16_t payload_len = (uint16_t)(len - index);
+		/* Forward the original payload to the 4G module first. */
+		(void)uart_manage_dma_send_by_name("4g", (uint8_t *)buf, len);
 
-		/* Handle OTA START command */
-		if (at_payload_equals(payload, payload_len, CRANER_OTA_REQUEST_CMD) != 0U)
+		/* Add trailing CRLF if the command does not already end with it. */
+		if ((len > 0U) && (buf[len - 1U] != '\r') && (buf[len - 1U] != '\n'))
 		{
-			int32_t ret = craner_request_ota_update();
-
-			if (ret == AT_OK)
-			{
-				at_send_reply(reply_fn, CRANER_REPLY_OK);
-				NVIC_SystemReset();
-				return AT_OK;
-			}
-
-			at_send_reply(reply_fn, CRANER_REPLY_ERROR);
-			return ret;
+			static const uint8_t crlf[] = "\r\n";
+			const uint16_t crlf_len = (uint16_t)(sizeof(crlf) - 1U);
+			(void)uart_manage_dma_send_by_name("4g", (uint8_t *)crlf, crlf_len);
 		}
 
-		/* Handle OTA RESET command: abort current session and clear OTA state */
-		// if (strstr(tmp, "craner#AT+OTARESET") != NULL)
-		// {
-		// 	(void)ota_reset_transfer_callback();
-		// 	{
-		// 		const char ok[] = "craner#OK\r\n";
-		// 		(void)send_fn((uint8_t *)ok, (uint16_t)(sizeof(ok) - 1U));
-		// 	}
-		// 	return AT_OK;
-		// }
-
-		/* Handle system reset command */
-		// if (strstr(tmp, "craner#AT+SYSRESET") != NULL)
-		// {
-		// 	const char ok[] = "craner#OK\r\n";
-		// 	(void)send_fn((uint8_t *)ok, (uint16_t)(sizeof(ok) - 1U));
-		// 	osDelay(100U);
-		// 	NVIC_SystemReset();
-		// 	return AT_OK;
-		// }
-
-        /* Must place general command handler at the end, otherwise it may preempt specific command handling */
-		at_send_reply(reply_fn, CRANER_REPLY_OK);
 		return AT_OK;
 	}
 
 	return AT_PREFIX_NOT_MATCH;
 }
-
-// 专门处理发给 有人(USR) 4G 模组的 AT 指令
-int32_t usr_at_handler(const uint8_t *buf, uint16_t len)
-{
-    char usr_at_buf[256];
-    
-    if ((buf == NULL) || (len == 0U))
-    {
-        return 0U;
-    }
-
-    uint16_t safe_len = len;
-    if (safe_len > 230) {
-        safe_len = 230; 
-    }
-
-    // 组装免切 AT 指令格式： "usr.cn#" + 指令 + "\r\n"
-    int at_len = snprintf(usr_at_buf, sizeof(usr_at_buf), "usr.cn#%.*s", safe_len, buf);
-    
-    // 3. 智能补全回车换行符 (如果上位机漏发了，单片机帮忙兜底补上)
-    if (usr_at_buf[at_len - 1] != '\n') 
-    {
-        usr_at_buf[at_len++] = '\r';
-        usr_at_buf[at_len++] = '\n';
-        usr_at_buf[at_len] = '\0';
-    }
-
-    printf("[INFO] Auto-Wrap USR AT: %s", usr_at_buf);
-
-    (void)uart_manage_dma_send_by_name("4g", (uint8_t *)usr_at_buf, at_len);
-
-    return 1U;
-}
-

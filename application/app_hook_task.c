@@ -59,14 +59,6 @@ const osThreadAttr_t app_4g_attributes = {
     .priority = (osPriority_t)osPriorityNormal1, 
 };
 
-EventGroupHandle_t eg = NULL; 
-
-void EventGroupCreate_Init(void) {
-    if (eg == NULL) {
-        eg = xEventGroupCreate();
-    }
-}
-
 // 供外部访问本机状态的 Modbus 从机初始化
 void init_ai_safy_slave(void) {
     static modbusHandler_t modbus_rtu_server;
@@ -188,7 +180,6 @@ void app_4g_thread(void *argument)
 }
 // 吊钩系统总初始化入口
 void init_app_hook_task() {
-    EventGroupCreate_Init();
     //启动本机的 Modbus 通信服务
     init_modbus_slave(&modbus_rtu_server, &huart8, FORWARD_SLAVE_ADDR);  
     //初始化串口管理模块

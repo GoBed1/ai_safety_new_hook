@@ -36,6 +36,7 @@ void init_app(void)
 {
   specify_redirect_uart(&huart5);
   printf("\r\n[INFO] [BOARD] specify redirect printf to huart5\r\n");
+  printf("[INFO] [BOARD] fw time: %s %s\r\n", __DATE__, __TIME__);
 
   init_app_hook_task();
   printf("[INFO] [BOARD] ENABLE_ENCODER_TASK\r\n");

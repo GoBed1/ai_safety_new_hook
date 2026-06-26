@@ -410,6 +410,10 @@ void parser_process_byte(ParserCtx_t *ctx, uint8_t byte)
             ctx->state = STATE_WAIT_START;
         }
         break;
+
+    case STATE_FRAME_COMPLETE:
+        ctx->state = STATE_WAIT_START;
+        break;
     }
 }
 
