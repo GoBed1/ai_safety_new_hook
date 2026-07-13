@@ -191,7 +191,7 @@ void buzzer_logic(void)
 }
 
 // ========== 灯光通信处理逻辑 ==========
-void led_logic(void)
+/*void led_logic(void)
 {
     static uint8_t led_timeout_count = 0; 
 
@@ -259,6 +259,125 @@ void led_logic(void)
             LOGE("LED OFFLINE ERROR! Timeout >= 3 times.\n");
         }
     }
+}*/
+void led_logic(void)
+{
+    static uint8_t led_timeout_count = 0; 
+    static TickType_t last_step_tick = 0;
+    static uint32_t led_step_counter = 0;
+    static uint8_t current_physical_state = 0xFF; 
+
+    uint16_t cmd_led_switch = MB_Reg_Get(CMD_LED_SWITCH);
+    uint16_t status_buzzer  = MB_Reg_Get(STATUS_BUZZER);
+    uint16_t current_err    = MB_Reg_Get(REG_ERROR_CODE);
+
+    //自定义闪烁参数配置 (单位：250ms/步)
+    const uint8_t ON_STEPS  = 8;  // 亮 3步 = 750ms
+    const uint8_t OFF_STEPS = 4;  // 灭 1步 = 250ms
+    const uint8_t CYCLE_STEPS = ON_STEPS + OFF_STEPS;
+
+    uint8_t need_flash = (cmd_led_switch == 1) || (status_buzzer != 0);
+
+    if (need_flash)
+    {
+        if (xTaskGetTickCount() - last_step_tick >= pdMS_TO_TICKS(250))
+        {
+            last_step_tick = xTaskGetTickCount();
+            uint8_t current_pos = led_step_counter % CYCLE_STEPS;
+            led_step_counter++;
+
+            uint8_t desired_state = (current_pos < ON_STEPS) ? 1 : 0;
+
+            if (desired_state != current_physical_state || (current_err & ERR_LED_OFFLINE))
+            {
+                cmd_telegram.u16RegAdd = REG_LED_CTRL;
+                cmd_payload = desired_state ? CMD_LED_ON : CMD_LED_OFF; 
+                
+                ModbusQuery(&sound_light_app, cmd_telegram);
+                uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
+
+                if (err == OP_OK_QUERY)
+                {
+                    LOGI("LED write success: %s\n", desired_state ? "ON" : "OFF");
+                    current_physical_state = desired_state;
+                    MB_Reg_Set(STATUS_LED_SWITCH, 1); 
+                    
+                    if (current_err & ERR_LED_OFFLINE)
+                    {
+                        LOGI("LED Reconnected! Clearing offline error.\n");
+                        taskENTER_CRITICAL();
+                        uint16_t err_led = MB_Reg_Get(REG_ERROR_CODE);
+                        MB_Reg_Set(REG_ERROR_CODE, err_led & ~ERR_LED_OFFLINE);
+                        taskEXIT_CRITICAL();
+                    }
+                    led_timeout_count = 0;
+                }
+                else
+                {
+                    if (led_timeout_count < 3)
+                    {
+                        led_timeout_count++;
+                        LOGE("LED write fail, timeout count = %d\n", led_timeout_count);
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        // 彻底关闭的逻辑：确保灯已经灭掉，且停止步进计数
+        if (current_physical_state != 0 || (current_err & ERR_LED_OFFLINE))
+        {
+            cmd_telegram.u16RegAdd = REG_LED_CTRL;
+            cmd_payload = CMD_LED_OFF;
+
+            ModbusQuery(&sound_light_app, cmd_telegram);
+            uint32_t err = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MODBUS_WAIT_TIMEOUT_MS));
+
+            if (err == OP_OK_QUERY)
+            {
+                LOGI("LED write success: ALL OFF (System cleared)\n");
+                current_physical_state = 0;
+                led_step_counter = 0;             // 归零计数器
+                MB_Reg_Set(STATUS_LED_SWITCH, 0); // 彻底关闭
+                
+                if (current_err & ERR_LED_OFFLINE)
+                {
+                    taskENTER_CRITICAL();
+                    uint16_t err_led = MB_Reg_Get(REG_ERROR_CODE);
+                    MB_Reg_Set(REG_ERROR_CODE, err_led & ~ERR_LED_OFFLINE);
+                    taskEXIT_CRITICAL();
+                }
+                led_timeout_count = 0;
+            }
+            else
+            {
+                if (led_timeout_count < 3)
+                {
+                    led_timeout_count++;
+                    LOGE("LED OFF write fail, timeout count = %d\n", led_timeout_count);
+                }
+            }
+        }
+    }
+
+    // ===== 掉线异常叠加判定 =====
+    if (led_timeout_count >= 3)
+    {
+        uint8_t need_log = 0;
+        taskENTER_CRITICAL();
+        uint16_t err_code = MB_Reg_Get(REG_ERROR_CODE);
+        if ((err_code & ERR_LED_OFFLINE) == 0)
+        {
+            MB_Reg_Set(REG_ERROR_CODE, err_code | ERR_LED_OFFLINE);
+            need_log = 1;
+        }
+        taskEXIT_CRITICAL();
+        if (need_log)
+        {
+            LOGE("LED OFFLINE ERROR! Timeout >= 3 times.\n");
+        }
+    }
 }
 
 void init_bms_alarm_module(void)
@@ -267,12 +386,12 @@ void init_bms_alarm_module(void)
     extern UART_HandleTypeDef huart6;
     extern UART_HandleTypeDef huart7;
 
-    init_modbus_master(
-        &bms_app,
-        &huart6,
-        bms_modbus_master_buf,
-        sizeof(bms_modbus_master_buf) / sizeof(bms_modbus_master_buf[0]));
-    LOGI("BMS modbus master (USART6) start \n");
+    // init_modbus_master(
+    //     &bms_app,
+    //     &huart6,
+    //     bms_modbus_master_buf,
+    //     sizeof(bms_modbus_master_buf) / sizeof(bms_modbus_master_buf[0]));
+    // LOGI("BMS modbus master (USART6) start \n");
 
     init_modbus_master(
         &sound_light_app,
@@ -288,7 +407,7 @@ void modbus_alarm_handle(void)
     {
         return;
     }
-    static TickType_t last_500ms = 0;
+    static TickType_t last_10ms = 0;
 
     now_volume = MB_Reg_Get(CMD_VOLUME);
 
@@ -309,12 +428,12 @@ void modbus_alarm_handle(void)
             LOGE("BUZZER_VOLUME write fail : %d \n", err);
         }
     }
+    led_logic(); 
     // 2. 灯光与喇叭控制 (500ms周期)
-    if (xTaskGetTickCount() - last_500ms >= pdMS_TO_TICKS(500))
+    if (xTaskGetTickCount() - last_10ms >= pdMS_TO_TICKS(10))
     {
-        last_500ms = xTaskGetTickCount();
+        last_10ms = xTaskGetTickCount();
         buzzer_logic(); 
-        led_logic();    
     }
 }
 

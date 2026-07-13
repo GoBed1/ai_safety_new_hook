@@ -91,7 +91,7 @@ void led_sound_master_thread(void *argument)
         
         modbus_alarm_handle();  // 处理声光模块
 
-        osDelay(100); 
+        osDelay(50); 
     }
 }
 void bms_master_thread(void *argument)
@@ -110,7 +110,7 @@ void relay_heartbeat_thread(void *argument)
     for (;;)
     {
         // g_task_alive_flags |= TASK_RELAY_ALIVE; // 看门狗打卡
-        process_relay_logic();                  
+        // process_relay_logic();                  
         osDelay(100);                           
     }
 }
@@ -181,7 +181,7 @@ void app_4g_thread(void *argument)
 // 吊钩系统总初始化入口
 void init_app_hook_task() {
     //启动本机的 Modbus 通信服务
-    init_modbus_slave(&modbus_rtu_server, &huart8, FORWARD_SLAVE_ADDR);  
+    init_modbus_slave(&modbus_rtu_server, &huart6, FORWARD_SLAVE_ADDR);  
     //初始化串口管理模块
     init_uart_manage();
     //声光警报和bms,主机初始化
@@ -196,6 +196,7 @@ void init_app_hook_task() {
     MB_Reg_Set(REG_ERROR_CODE, 0x0000); 
     // 初始化心跳使能寄存器为1（默认开启心跳）
     MB_Reg_Set(HEARTBEAT_ENABLE, 1);
+    MB_Reg_Set(0, 1);
     led_sound_master_handle = osThreadNew(led_sound_master_thread, NULL, &led_sound_master_attributes);
     bms_master_handle = osThreadNew(bms_master_thread, NULL, &bms_master_attributes);
     relay_heartbeat_handle = osThreadNew(relay_heartbeat_thread, NULL, &relay_heartbeat_attributes);
