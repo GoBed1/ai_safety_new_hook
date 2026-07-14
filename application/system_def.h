@@ -197,6 +197,7 @@ extern "C"
 
 // --- 外部设备 (Slave) 寄存器地址与指令 ---
 #define REG_LED_CTRL                                   0x00C2  // 外部 LED 控制寄存器地址
+#define CMD_LED_ON                                     0x0041  // 指令：常亮
 #define CMD_LED_SLOW_FLASH                             0x0051  // 指令：慢闪
 #define CMD_LED_BURST_FLASH                            0x0061  // 指令：爆闪
 #define CMD_LED_OFF                                    0x0060  // 指令：关闭

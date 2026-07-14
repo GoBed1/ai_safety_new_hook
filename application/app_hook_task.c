@@ -91,7 +91,7 @@ void led_sound_master_thread(void *argument)
         
         modbus_alarm_handle();  // 处理声光模块
 
-        osDelay(100); 
+        osDelay(50);
     }
 }
 void bms_master_thread(void *argument)
