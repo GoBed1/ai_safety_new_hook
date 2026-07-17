@@ -173,7 +173,7 @@ extern "C"
 #define WT_GPS_6N                                      3
 
 #ifndef GPS_TYPE_STD
-    #define GPS_TYPE_STD                               WT_GPS_6N
+    #define GPS_TYPE_STD                               WT_GPS_UM626N
 #endif
 
 #define RTC_BKP_MAGIC_NUMBER                           0x5AA5  // RTC备份域校验魔数，用于判断掉电保持

@@ -180,7 +180,7 @@ void gps_standby_thread(void *argument)
         // g_task_alive_flags |= TASK_GPS_ALIVE;
         process_gps_logic();  
 
-        osDelay(1000); 
+        osDelay(1000);
     }
 }
 

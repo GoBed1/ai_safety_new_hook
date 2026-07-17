@@ -1,11 +1,15 @@
-#define MODULE_LOG_ENABLE LOG_SWITCH_GPS
+#define MODULE_LOG_ENABLE 1
 #include "gps_app.h"
 #include "nmea.h"
 #include "modbus_rtu_server_interface.h"
 
+#define GPS_RX_CHUNK_SIZE        128U
+#define GPS_NMEA_SENTENCE_SIZE   160U
+#define GPS_CONFIG_COMMAND_DELAY 50U
+
 extern RTC_HandleTypeDef hrtc;
 
-// GPS是否已同步（锁星后才允许关机判断）
+// GPS time/date has synchronized RTC; only then enable the power schedule.
 uint8_t s_gps_synced = 0;
 
 static void enter_standby(void);
@@ -13,6 +17,9 @@ static void set_alarm_b(uint8_t utc_h, uint8_t utc_m);
 static void gps_sync_rtc_once(void);
 static void print_internal_rtc_time(void);
 static uint8_t rtc_is_wakeup_from_standby(void);
+static void gps_process_rx_byte(uint8_t byte);
+static void gps_process_sentence(const uint8_t *sentence, uint16_t length);
+static uint8_t gps_calculate_weekday(uint16_t year, uint8_t month, uint8_t day);
 volatile uint16_t is_soft_standby = 0; // 软休眠状态标志（爆闪灯断电）
 // 读取PWR标志位，1=来自待机唤醒，0=正常上电
 static uint8_t rtc_is_wakeup_from_standby(void)
@@ -23,8 +30,9 @@ static uint8_t rtc_is_wakeup_from_standby(void)
 
 void config_gps_app(void)
 {
+    HAL_GPIO_WritePin(GPS_EN_GPIO_Port, GPS_EN_Pin, GPIO_PIN_SET);
     (void)uart_manage_enable_dma_recv_by_name("gps");
-    osDelay(1000);
+    osDelay(3000);
 
 #if (GPS_TYPE_STD == WT_RTK_UM982)
     osDelay(10);
@@ -62,7 +70,10 @@ void config_gps_app(void)
     osDelay(10);
     const char cfgmsg_gst[] = "$CFGMSG,0,7,0\r\n";
     uart_manage_dma_send_by_name("gps", (uint8_t *)cfgmsg_gst, sizeof(cfgmsg_gst) - 1U);
-    osDelay(10);
+    osDelay(GPS_CONFIG_COMMAND_DELAY);
+    const char cfgmsg_gbs[] = "$CFGMSG,0,8,0\r\n";
+    uart_manage_dma_send_by_name("gps", (uint8_t *)cfgmsg_gbs, sizeof(cfgmsg_gbs) - 1U);
+    osDelay(GPS_CONFIG_COMMAND_DELAY);
 #elif (GPS_TYPE_STD == WT_GPS_6N)
     const char cfgmsg_freq[] = "$PCAS03,1,0,0,0,0,0,0,0*03\r\n";
     uart_manage_dma_send_by_name("gps", (uint8_t *)cfgmsg_freq, sizeof(cfgmsg_freq) - 1U);
@@ -71,8 +82,9 @@ void config_gps_app(void)
     uart_manage_dma_send_by_name("gps", (uint8_t *)cfgmsg_save, sizeof(cfgmsg_save) - 1U);
     osDelay(10);
 #endif
-    HAL_GPIO_WritePin(GPS_EN_GPIO_Port, GPS_EN_Pin, GPIO_PIN_SET); // 高电平gps工作
-    osDelay(3000);
+#if (GPS_TYPE_STD == WT_GPS_UM626N)
+    LOGI("GPS configured: UM626N, USART3 115200 8N1, RMC only\r\n");
+#endif
 }
 // 初始化RTC电源管理，设置默认的关机和开机时间
 void rtc_power_init(void)
@@ -109,54 +121,126 @@ void rtc_power_init(void)
     }
 }
 
+static void gps_process_sentence(const uint8_t *sentence, uint16_t length)
+{
+    int parse_result;
+
+    if ((sentence == NULL) || (length == 0U))
+    {
+        return;
+    }
+
+    LOGI("[GPS RX] %.*s", (int)length, (const char *)sentence);
+
+    /* NMEA talker IDs may be GP/GN/BD; the sentence type is bytes 3..5. */
+    if ((length < 7U) ||
+        (sentence[0] != '$') ||
+        (sentence[3] != 'R') ||
+        (sentence[4] != 'M') ||
+        (sentence[5] != 'C'))
+    {
+        return;
+    }
+
+    /* Avoid accepting time/date flags left over from an earlier sentence. */
+    g_nmea_gnss.valid_time = 0U;
+    g_nmea_gnss.valid_date = 0U;
+    parse_result = nmea_parse_gxrmc(sentence, length);
+    if ((parse_result == NMEA_OK) || (parse_result == NMEA_ERR_NO_FIX))
+    {
+        LOGI("[GPS RMC] status=%c, UTC=%02u:%02u:%02u, date=%04u-%02u-%02u\r\n",
+             (parse_result == NMEA_OK) ? 'A' : 'V',
+             (unsigned int)g_nmea_gnss.time_h,
+             (unsigned int)g_nmea_gnss.time_m,
+             (unsigned int)g_nmea_gnss.time_s,
+             (unsigned int)g_nmea_gnss.date_year,
+             (unsigned int)g_nmea_gnss.date_m,
+             (unsigned int)g_nmea_gnss.date_d);
+
+        if ((g_nmea_gnss.valid_time != 0U) &&
+            (g_nmea_gnss.valid_date != 0U))
+        {
+            gps_sync_rtc_once();
+        }
+        else
+        {
+            LOGE("[GPS RMC] current sentence has no valid time/date\r\n");
+        }
+    }
+    else
+    {
+        LOGE("[GPS RMC] parse failed: %d\r\n", parse_result);
+    }
+}
+
+static void gps_process_rx_byte(uint8_t byte)
+{
+    static uint8_t sentence[GPS_NMEA_SENTENCE_SIZE];
+    static uint16_t sentence_length = 0U;
+
+    if (byte == '$')
+    {
+        sentence_length = 0U;
+    }
+
+    if ((sentence_length == 0U) && (byte != '$'))
+    {
+        return;
+    }
+
+    if (sentence_length >= sizeof(sentence))
+    {
+        LOGE("GPS sentence overflow\r\n");
+        sentence_length = 0U;
+        return;
+    }
+
+    sentence[sentence_length++] = byte;
+    if (byte == '\n')
+    {
+        gps_process_sentence(sentence, sentence_length);
+        sentence_length = 0U;
+    }
+}
+
 void update_gps_app(void)
 {
-#if TSET_GPS_NMEA_PARSER
+#if TEST_GPS_NMEA_PARSER
     gps_test_nmea_parser();
     osDelay(1000);
     return;
 #endif
 
     uart_inferface_t *m_obj = uart_manage_get_obj_by_name("gps");
+    uint8_t rx_chunk[GPS_RX_CHUNK_SIZE];
+
     if (m_obj == NULL)
     {
         LOGE("GPS uart interface not found\r\n");
         return;
     }
 
-    lwrb_sz_t available = lwrb_get_full(&m_obj->process_ring_buffer);
-    if (available == 0)
+    for (;;)
     {
-        return;
-    }
-    uint8_t to_read_buffer[128];
-    lwrb_sz_t to_read = (available > sizeof(to_read_buffer)) ? sizeof(to_read_buffer) : available;
-    lwrb_sz_t read_size = lwrb_read(&m_obj->process_ring_buffer, to_read_buffer, to_read);
+        lwrb_sz_t available = lwrb_get_full(&m_obj->process_ring_buffer);
+        lwrb_sz_t to_read;
+        lwrb_sz_t read_size;
 
-    if (read_size > 0)
-    {
-        LOGD("Raw GPS data (%lu bytes): %.*s\r\n", (unsigned long)read_size, (int)read_size, (const char *)to_read_buffer);
-        int parse_result = nmea_parse(to_read_buffer, (uint16_t)read_size);
-        if (parse_result != NMEA_OK && parse_result != NMEA_ERR_NO_FIX)
+        if (available == 0U)
         {
-            LOGE("[PE%d]%.*s\r\n", parse_result, (int)read_size, (const char *)to_read_buffer);
+            break;
         }
-        else
-        {
-            if (g_nmea_gnss.time_h > 0 || g_nmea_gnss.time_m > 0 || g_nmea_gnss.time_s > 0)
-            {
-                LOGD("RMC: parse_result=%d fix=%u time=%02u:%02u:%02u date=%04u-%02u-%02u\r\n",
-                     parse_result,
-                     g_nmea_gnss.fix_quality,
-                     g_nmea_gnss.time_h,
-                     g_nmea_gnss.time_m,
-                     g_nmea_gnss.time_s,
-                     g_nmea_gnss.date_year,
-                     g_nmea_gnss.date_m,
-                     g_nmea_gnss.date_d);
 
-                gps_sync_rtc_once();
-            }
+        to_read = (available > sizeof(rx_chunk)) ? sizeof(rx_chunk) : available;
+        read_size = lwrb_read(&m_obj->process_ring_buffer, rx_chunk, to_read);
+        if (read_size == 0U)
+        {
+            break;
+        }
+
+        for (lwrb_sz_t i = 0U; i < read_size; ++i)
+        {
+            gps_process_rx_byte(rx_chunk[i]);
         }
     }
 }
@@ -182,7 +266,26 @@ void print_internal_rtc_time(void)
 }
 
 // GPS同步RTC的函数，确保只同步一次
-void gps_sync_rtc_once(void)
+static uint8_t gps_calculate_weekday(uint16_t year, uint8_t month, uint8_t day)
+{
+    static const uint8_t month_offset[12] = {0U, 3U, 2U, 5U, 0U, 3U,
+                                             5U, 1U, 4U, 6U, 2U, 4U};
+    uint32_t adjusted_year = year;
+    uint32_t weekday;
+
+    if (month < 3U)
+    {
+        --adjusted_year;
+    }
+
+    weekday = (adjusted_year + (adjusted_year / 4U) -
+               (adjusted_year / 100U) + (adjusted_year / 400U) +
+               month_offset[month - 1U] + day) % 7U;
+
+    return (weekday == 0U) ? RTC_WEEKDAY_SUNDAY : (uint8_t)weekday;
+}
+
+static void gps_sync_rtc_once(void)
 {
     static uint8_t rtc_synced = 0;
     if (rtc_synced)
@@ -192,13 +295,41 @@ void gps_sync_rtc_once(void)
     }
 
     RTC_TimeTypeDef sTime = {0};
+    RTC_DateTypeDef sDate = {0};
+
+    if ((g_nmea_gnss.time_h > 23U) ||
+        (g_nmea_gnss.time_m > 59U) ||
+        (g_nmea_gnss.time_s > 59U) ||
+        (g_nmea_gnss.date_year < 2000U) ||
+        (g_nmea_gnss.date_year > 2099U) ||
+        (g_nmea_gnss.date_m < 1U) ||
+        (g_nmea_gnss.date_m > 12U) ||
+        (g_nmea_gnss.date_d < 1U) ||
+        (g_nmea_gnss.date_d > 31U))
+    {
+        LOGE("GPS RMC time/date out of range\r\n");
+        return;
+    }
+
     sTime.Hours = g_nmea_gnss.time_h;
     sTime.Minutes = g_nmea_gnss.time_m;
     sTime.Seconds = g_nmea_gnss.time_s;
     sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
     sTime.StoreOperation = RTC_STOREOPERATION_RESET;
 
-    HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+    sDate.Year = (uint8_t)(g_nmea_gnss.date_year - 2000U);
+    sDate.Month = g_nmea_gnss.date_m;
+    sDate.Date = g_nmea_gnss.date_d;
+    sDate.WeekDay = gps_calculate_weekday(g_nmea_gnss.date_year,
+                                          g_nmea_gnss.date_m,
+                                          g_nmea_gnss.date_d);
+
+    if ((HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) ||
+        (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK))
+    {
+        LOGE("GPS failed to synchronize RTC\r\n");
+        return;
+    }
 
     // 解锁备份域，并将 0x5AA5 写入备份寄存器 1
     HAL_PWR_EnableBkUpAccess();
@@ -208,7 +339,7 @@ void gps_sync_rtc_once(void)
     osDelay(100); // 确保RTC寄存器稳定
 
     rtc_synced = 1;
-    s_gps_synced = 1; // 控制关机逻辑，必须锁星后才允许判断
+    s_gps_synced = 1; // RTC has a valid GPS time/date; allow power schedule checks.
 }
 
 // 循环每10s检测
