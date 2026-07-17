@@ -4,6 +4,7 @@
 #include "uart_manage.h"
 #include "Modbus.h"
 #include "system_def.h"
+#include "app_rfid.h"
 
 /* DMA buffer placement */
 #if defined(__GNUC__)
@@ -120,6 +121,12 @@ void init_uart_manage(void)
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
+  if (RFID_OwnsUart(huart))
+  {
+    RFID_UartErrorCallback(huart);
+    return;
+  }
+
   (void)uart_manage_reset_dma_send(huart);
   (void)uart_manage_enable_dma_recv(huart);
 }
@@ -163,6 +170,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+  if (RFID_OwnsUart(huart))
+  {
+    RFID_RxEventCallbackFromISR(huart, size, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    return;
+  }
+
   uart_inferface_t *m_obj = uart_manage_get_obj(huart);
 
   if (m_obj != NULL)

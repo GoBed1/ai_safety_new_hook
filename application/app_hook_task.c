@@ -5,11 +5,25 @@
 #include "app_bms_alarm.h"
 #include "app_sys_supervisor.h"
 #include "gps_app.h"
-//#include "app_4G.h"
+#include "app_rfid.h"
+#include "app_4g.h"
 // ====== 看门狗标志位======
 volatile uint8_t g_task_alive_flags = 0;
+extern UART_HandleTypeDef huart4;
 extern UART_HandleTypeDef huart8;
 static modbusHandler_t modbus_rtu_server;
+
+static StaticTask_t rfid_task_control_block;
+static StackType_t rfid_task_stack[1024U];
+osThreadId_t RFID_master_handle;
+const osThreadAttr_t RFID_master_attributes = {
+    .name = "RFIDMaster",
+    .cb_mem = &rfid_task_control_block,
+    .cb_size = sizeof(rfid_task_control_block),
+    .stack_mem = rfid_task_stack,
+    .stack_size = sizeof(rfid_task_stack),
+    .priority = (osPriority_t)osPriorityNormal1,
+};
 //爆闪灯线程任务
 osThreadId_t led_sound_master_handle;
 const osThreadAttr_t led_sound_master_attributes = {
@@ -62,12 +76,12 @@ const osThreadAttr_t app_4g_attributes = {
 // 供外部访问本机状态的 Modbus 从机初始化
 void init_ai_safy_slave(void) {
     static modbusHandler_t modbus_rtu_server;
-    extern UART_HandleTypeDef huart8;
+    extern UART_HandleTypeDef huart4;
     
 
     modbus_rtu_server.uModbusType = MB_SLAVE;
     modbus_rtu_server.u8id = FORWARD_SLAVE_ADDR; 
-    modbus_rtu_server.port = &huart8;
+    modbus_rtu_server.port = &huart4;
     modbus_rtu_server.EN_Port = NULL; 
     modbus_rtu_server.EN_Pin = 0;
     
@@ -82,6 +96,48 @@ void init_ai_safy_slave(void) {
     ModbusInit(&modbus_rtu_server);
     ModbusStart(&modbus_rtu_server);
 }
+void RFID_master_thread(void *argument)
+{
+    uint8_t frame[RFID_RX_BUFFER_SIZE];
+    uint16_t frame_length;
+    TickType_t last_offline_check = xTaskGetTickCount();
+
+    (void)argument;
+    RFID_Service(&RFID_client);
+
+    for (;;)
+    {
+        bool registers_changed = false;
+
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500U));
+
+        while (RFID_TakeFrame(&RFID_client,
+                              frame,
+                              (uint16_t)sizeof(frame),
+                              &frame_length))
+        {
+            RFID_OnFrame(&RFID_client, frame, frame_length);
+            registers_changed = true;
+        }
+
+        if ((TickType_t)(xTaskGetTickCount() - last_offline_check) >=
+            pdMS_TO_TICKS(5000U))
+        {
+            last_offline_check = xTaskGetTickCount();
+            RFID_CheckOffline(&RFID_client);
+            registers_changed = true;
+        }
+
+        if (registers_changed)
+        {
+            RFID_WriteToModbusRegs(&RFID_client);
+            // RFID_PrintValidTags(&RFID_client);
+        }
+
+        RFID_Service(&RFID_client);
+    }
+}
+
 void led_sound_master_thread(void *argument)
 {
     power_on_self_test(); // 电源上电自检
@@ -181,7 +237,7 @@ void app_4g_thread(void *argument)
 // 吊钩系统总初始化入口
 void init_app_hook_task() {
     //启动本机的 Modbus 通信服务
-    init_modbus_slave(&modbus_rtu_server, &huart8, FORWARD_SLAVE_ADDR);  
+    init_modbus_slave(&modbus_rtu_server, &huart4, FORWARD_SLAVE_ADDR);
     //初始化串口管理模块
     init_uart_manage();
     //声光警报和bms,主机初始化
@@ -196,6 +252,11 @@ void init_app_hook_task() {
     MB_Reg_Set(REG_ERROR_CODE, 0x0000); 
     // 初始化心跳使能寄存器为1（默认开启心跳）
     MB_Reg_Set(HEARTBEAT_ENABLE, 1);
+    RFID_master_handle = osThreadNew(RFID_master_thread, NULL, &RFID_master_attributes);
+    if (RFID_Init(&RFID_client, &huart8, (TaskHandle_t)RFID_master_handle) != HAL_OK)
+    {
+        LOGE("RFID UART8 DMA init failed\r\n");
+    }
     led_sound_master_handle = osThreadNew(led_sound_master_thread, NULL, &led_sound_master_attributes);
     bms_master_handle = osThreadNew(bms_master_thread, NULL, &bms_master_attributes);
     relay_heartbeat_handle = osThreadNew(relay_heartbeat_thread, NULL, &relay_heartbeat_attributes);
