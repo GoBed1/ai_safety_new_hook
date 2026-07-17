@@ -138,6 +138,7 @@ int main(void)
   MX_UART5_Init();
   MX_RTC_Init();
   MX_USART6_UART_Init();
+  MX_UART4_Init();
   /* USER CODE BEGIN 2 */
   init_app();
   /* USER CODE END 2 */

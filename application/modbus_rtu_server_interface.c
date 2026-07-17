@@ -62,7 +62,7 @@ uint16_t* MB_InputReg_GetPointer(void) { return modbus_input_registers; }
 
 void init_modbus_slave(modbusHandler_t *handler, UART_HandleTypeDef *huart, uint8_t slave_id) 
 {
-
+    memset(modbus_registers, 0, sizeof(modbus_registers));
     handler->uModbusType = MB_SLAVE;
     handler->u8id = slave_id; 
     handler->port = huart;
