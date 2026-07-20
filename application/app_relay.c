@@ -15,6 +15,7 @@ void relay_app_init(void)
 {
     // 初始化引脚状态
         HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(PWD_LED_GPIO_Port, PWD_LED_Pin, GPIO_PIN_RESET);
     // 初始化心跳记录（使用真实的运行时间）
     last_heartbeat_val = MB_Reg_Get(STATUS_HEART_BEAT);
     recv_heartbeat_time = xTaskGetTickCount();
@@ -36,7 +37,6 @@ void process_relay_logic(void)
             if (relay_is_on == 0)
             {
                 HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
-                HAL_GPIO_WritePin(PWD_LED_GPIO_Port, PWD_LED_Pin, GPIO_PIN_SET);
 
                 relay_is_on = 1;
                 LOGI("[Heartbeat] Disabled. Relay 2 SET to 1.\r\n");
@@ -67,7 +67,6 @@ void process_relay_logic(void)
             {
                 // 收到心跳，继电器引脚置为1 (上电)
                 HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
-                HAL_GPIO_WritePin(PWD_LED_GPIO_Port, PWD_LED_Pin, GPIO_PIN_SET);
                 LOGI("[Heartbeat] Heartbeat received. Relay 2 SET to 1.\r\n");
                 last_volume = 0xFFFF;             // 音量更新,主循环会更新
                 relay_is_on = 1;                  // 标记为有电状态
@@ -77,7 +76,6 @@ void process_relay_logic(void)
             {
                 // 收到心跳，继电器引脚置为1 (上电)
                 HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_SET);
-                HAL_GPIO_WritePin(PWD_LED_GPIO_Port, PWD_LED_Pin, GPIO_PIN_SET);
                 // LOGI("[Heartbeat] Host active. Relay 2 SET to 1. Reg[104]=%d\r\n", current_heartbeat);
             }
             taskENTER_CRITICAL();

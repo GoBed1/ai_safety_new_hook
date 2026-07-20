@@ -271,6 +271,11 @@ void led_logic(void)
     uint16_t status_buzzer  = MB_Reg_Get(STATUS_BUZZER);
     uint16_t current_err    = MB_Reg_Get(REG_ERROR_CODE);
 
+    /* PWD_LED follows the Modbus flash-light control register, not each flash phase. */
+    HAL_GPIO_WritePin(PWD_LED_GPIO_Port,
+                      PWD_LED_Pin,
+                      (cmd_led_switch == 1U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
     //自定义闪烁参数配置 (单位：250ms/步)
     const uint8_t ON_STEPS  = 8;  // 亮 3步 = 750ms
     const uint8_t OFF_STEPS = 4;  // 灭 1步 = 250ms

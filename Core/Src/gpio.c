@@ -61,7 +61,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPS_EN_Pin|PWD_LED_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPS_EN_GPIO_Port, GPS_EN_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(HEART_LED_GPIO_Port, HEART_LED_Pin, GPIO_PIN_SET);
@@ -71,6 +71,9 @@ void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(POWER_4G_3V3_GPIO_Port, POWER_4G_3V3_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(PWD_LED_GPIO_Port, PWD_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : FLASH_LIGHT_POWER_EN_Pin POWER_3V_Pin LED2_Pin */
   GPIO_InitStruct.Pin = FLASH_LIGHT_POWER_EN_Pin|POWER_3V_Pin|LED2_Pin;

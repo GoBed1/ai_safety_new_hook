@@ -286,6 +286,7 @@ void rtc_power_schedule_check(void)
             MB_Reg_Set(STATUS_BUZZER, 0);
 
             HAL_GPIO_WritePin(FLASH_LIGHT_POWER_EN_GPIO_Port, FLASH_LIGHT_POWER_EN_Pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(PWD_LED_GPIO_Port, PWD_LED_Pin, GPIO_PIN_RESET);
             LOGI("[PWR] Enter SOFT standby. Relay 2 OFF.\r\n");
 
             // 清除可能存在的心跳和掉线错误，防止休眠期间板载LED还在闪错
